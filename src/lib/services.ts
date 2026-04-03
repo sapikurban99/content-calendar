@@ -22,9 +22,6 @@ export const getSinglePostAnalytics = async (planId: string): Promise<TikTokPost
  * Triggers n8n Post Scraper and upserts results to Firestore.
  */
 export const syncSinglePostAnalytics = async (planId: string, postUrl: string): Promise<TikTokPostAnalytics> => {
-  const webhookUrl = process.env.NEXT_PUBLIC_N8N_POST_WEBHOOK_URL;
-  if (!webhookUrl) throw new Error("n8n Post Webhook URL is not defined in .env.local!");
-
   // Payload EXACTLY as required by the scraper flow
   const payload = {
     commentsPerPost: 0,
@@ -43,13 +40,14 @@ export const syncSinglePostAnalytics = async (planId: string, postUrl: string): 
     shouldDownloadVideos: false
   };
 
-  const response = await fetch(webhookUrl, {
+  // Use server-side proxy to avoid CORS issues on old browsers
+  const response = await fetch("/api/sync?target=post", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
 
-  if (!response.ok) throw new Error("Failed to reach n8n post scraper");
+  if (!response.ok) throw new Error("Failed to reach n8n post scraper (via proxy)");
 
   const data = await response.json();
   console.log("DEBUG: n8n raw post data:", JSON.stringify(data, null, 2));

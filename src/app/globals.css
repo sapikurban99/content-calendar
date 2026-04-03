@@ -17,6 +17,12 @@
   input, select, textarea {
     font-size: 16px !important;
   }
+
+  /* Force gap fallback for old Safari flexbox */
+  * {
+    -webkit-box-sizing: border-box;
+    box-sizing: border-box;
+  }
 }
 
 @layer utilities {
@@ -29,7 +35,7 @@
     scrollbar-width: none; /* Firefox */
   }
 
-  /* 💎 iOS Safari Glassmorphism Support (Sep 2021 Compatibility) */
+  /* 💎 iOS Safari Glassmorphism Support */
   .backdrop-blur-sm { -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
   .backdrop-blur-md { -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
   .backdrop-blur-lg { -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
@@ -47,4 +53,8 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  /* Ensure body doesn't overflow horizontally on narrow screens */
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
 }
