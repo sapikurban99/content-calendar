@@ -18,6 +18,16 @@ import {
   updateContentPlan
 } from "@/lib/services";
 import type { Account, ContentPlan, TikTokProfile, TikTokPostAnalytics } from "@/types/index";
+// ✨ Sytem Utility: Safe Date Parser for old iOS (Safari < 15)
+const parseSafeDate = (dateStr: string | undefined | null) => {
+  if (!dateStr) return new Date();
+  const d = new Date(dateStr);
+  if (!isNaN(d.getTime())) return d;
+  
+  // Fallback ISO polyfill for iOS 14
+  const fallback = new Date(dateStr.replace(/-/g, '/').replace('T', ' '));
+  return isNaN(fallback.getTime()) ? new Date() : fallback;
+};
 
 export default function DashboardPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -74,7 +84,7 @@ export default function DashboardPage() {
 
     const unsubscribePlans = onSnapshot(plansQuery, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ContentPlan));
-      setPlans(data.sort((a, b) => new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime()));
+      setPlans(data.sort((a, b) => parseSafeDate(b.publishDate).getTime() - parseSafeDate(a.publishDate).getTime()));
       setIsLoading(false);
     }, (error) => {
       console.error("Plans listener error:", error);
@@ -89,7 +99,7 @@ export default function DashboardPage() {
 
   // ✨ DERIVED STATE: Filtered plans based on current month/year
   const filteredPlans = plans.filter(p => {
-    const d = new Date(p.publishDate);
+    const d = parseSafeDate(p.publishDate);
     return d.getMonth() === currentDate.getMonth() && d.getFullYear() === currentDate.getFullYear();
   });
 
@@ -141,7 +151,7 @@ export default function DashboardPage() {
         title: newTitle,
         link: newLink,
         brief: newBrief,
-        publishDate: new Date(newDate).toISOString(),
+        publishDate: parseSafeDate(newDate).toISOString(),
         contentType: newType,
         status: "Ideation",
       });
@@ -249,7 +259,7 @@ export default function DashboardPage() {
                   {selectedPlan.status}
                 </span>
                 <span className="font-mono text-xs text-gray-500 bg-white px-2 py-1 rounded-md border-2 border-black flex items-center gap-1">
-                  <CalendarIcon className="w-3 h-3" /> {new Date(selectedPlan.publishDate).toLocaleDateString('en-GB')}
+                  <CalendarIcon className="w-3 h-3" /> {parseSafeDate(selectedPlan.publishDate).toLocaleDateString('en-GB')}
                 </span>
               </div>
               <button onClick={() => setSelectedPlan(null)} className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors border-2 border-transparent hover:border-black">
@@ -448,19 +458,21 @@ export default function DashboardPage() {
       )}
 
       {/* Header */}
-      <header className="backdrop-blur-md bg-white/70 border-b-2 border-black px-8 py-4 flex items-center justify-between sticky top-0 z-30 shadow-[0px_4px_0px_0px_rgba(0,0,0,1)]">
-        <div className="flex items-center gap-3">
-          <CalendarIcon className="w-8 h-8 text-black" />
-          <h1 className="text-2xl font-black tracking-tighter hover:scale-[1.02] transition-transform cursor-default">Content <span className="text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-500 to-cyan-400">Planner</span></h1>
+      <header className="backdrop-blur-md bg-white/70 border-b-2 border-black px-4 md:px-8 py-4 flex flex-col md:flex-row items-center justify-between gap-4 sticky top-0 z-30 shadow-[0px_4px_0px_0px_rgba(0,0,0,1)]">
+        <div className="flex items-center justify-between w-full md:w-auto">
+          <div className="flex items-center gap-2 md:gap-3">
+            <CalendarIcon className="w-6 h-6 md:w-8 md:h-8 text-black" />
+            <h1 className="text-xl md:text-2xl font-black tracking-tighter hover:scale-[1.02] transition-transform cursor-default">Content <span className="text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-500 to-cyan-400">Planner</span></h1>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button onClick={() => setIsAddPlanOpen(true)} className="px-6 py-2 bg-black text-white rounded-full font-bold text-xs tracking-wide flex items-center gap-2 hover:bg-fuchsia-600 transition-all shadow-[4px_4px_0px_0px_rgba(0,0,0,0.2)] active:translate-y-1 active:shadow-none"><Plus className="w-4 h-4" /> Buat Konten</button>
+        <div className="flex items-center overflow-x-auto no-scrollbar w-full md:w-auto gap-2 md:gap-3 pb-1 md:pb-0">
+          <button onClick={() => setIsAddPlanOpen(true)} className="whitespace-nowrap flex-shrink-0 px-4 md:px-6 py-2 bg-black text-white rounded-full font-bold text-xs tracking-wide flex items-center gap-2 hover:bg-fuchsia-600 transition-all shadow-[4px_4px_0px_0px_rgba(0,0,0,0.2)] active:translate-y-1 active:shadow-none"><Plus className="w-4 h-4" /> <span className="hidden sm:inline">Buat Konten</span></button>
           <div className="w-[2px] h-8 bg-gray-200 mx-1 hidden md:block"></div>
-          <select className="border-2 border-black rounded-full px-5 py-2 bg-white font-mono text-sm shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none cursor-pointer" value={selectedAccount} onChange={(e) => setSelectedAccount(e.target.value)}>
+          <select className="flex-1 md:flex-none border-2 border-black rounded-full px-3 md:px-5 py-2 bg-white font-mono text-xs md:text-sm shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none cursor-pointer" value={selectedAccount} onChange={(e) => setSelectedAccount(e.target.value)}>
             {accounts.map(acc => <option key={acc.id} value={acc.id}>@{acc.handle}</option>)}
           </select>
-          <button onClick={() => setIsAddAccountOpen(true)} className="w-10 h-10 rounded-full bg-white border-2 border-black flex items-center justify-center hover:scale-110 active:scale-95 transition-all text-black"><UserPlus className="w-5 h-5" /></button>
+          <button onClick={() => setIsAddAccountOpen(true)} className="flex-shrink-0 w-8 h-8 md:w-10 md:h-10 rounded-full bg-white border-2 border-black flex items-center justify-center hover:scale-110 active:scale-95 transition-all text-black"><UserPlus className="w-4 h-4 md:w-5 md:h-5" /></button>
         </div>
       </header>
 
@@ -611,17 +623,17 @@ export default function DashboardPage() {
         </div>
 
         <div className="lg:col-span-8 xl:col-span-9 space-y-6 order-1 lg:order-2">
-          <div className="flex items-center justify-between bg-white border-2 border-black rounded-2xl p-2 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white border-2 border-black rounded-2xl p-3 md:p-2 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
             <div className="flex gap-2">
-              <button onClick={() => setActiveView('calendar')} className={`px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all ${activeView === 'calendar' ? 'bg-black text-white' : 'hover:bg-gray-100 text-gray-500'}`}><CalendarIcon className="w-4 h-4" /> Calendar</button>
-              <button onClick={() => setActiveView('list')} className={`px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all ${activeView === 'list' ? 'bg-black text-white' : 'hover:bg-gray-100 text-gray-500'}`}><LayoutList className="w-4 h-4" /> List View</button>
+              <button onClick={() => setActiveView('calendar')} className={`flex-1 md:flex-none justify-center px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all ${activeView === 'calendar' ? 'bg-black text-white' : 'hover:bg-gray-100 text-gray-500'}`}><CalendarIcon className="w-4 h-4" /> Calendar</button>
+              <button onClick={() => setActiveView('list')} className={`flex-1 md:flex-none justify-center px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all ${activeView === 'list' ? 'bg-black text-white' : 'hover:bg-gray-100 text-gray-500'}`}><LayoutList className="w-4 h-4" /> List View</button>
             </div>
             
-            <div className="flex items-center gap-4 px-4 font-mono font-bold">
+            <div className="flex items-center justify-between md:justify-end md:gap-4 px-2 md:px-4 font-mono font-bold">
               <button onClick={prevMonth} className="p-1 hover:bg-gray-100 rounded-lg transition-colors"><ChevronLeft className="w-5 h-5 text-black" /></button>
-              <div className="w-32 text-center uppercase text-xs tracking-tighter sm:text-sm">
-                <span className="block sm:inline">{monthNames[currentDate.getMonth()]}</span> {' '}
-                <span className="opacity-50">{currentDate.getFullYear()}</span>
+              <div className="w-auto md:w-32 text-center uppercase tracking-tighter text-[10px] sm:text-xs md:text-sm flex-1">
+                <span className="inline">{monthNames[currentDate.getMonth()]}</span> {' '}
+                <span className="opacity-50 inline">{currentDate.getFullYear()}</span>
               </div>
               <button onClick={nextMonth} className="p-1 hover:bg-gray-100 rounded-lg transition-colors"><ChevronRight className="w-5 h-5 text-black" /></button>
             </div>
@@ -635,7 +647,7 @@ export default function DashboardPage() {
                 {Array.from({ length: daysInMonth }).map((_, i) => {
                   const dayNum = i + 1;
                   const dayPlans = plans.filter(p => {
-                    const d = new Date(p.publishDate);
+                    const d = parseSafeDate(p.publishDate);
                     return d.getDate() === dayNum && d.getMonth() === currentDate.getMonth() && d.getFullYear() === currentDate.getFullYear();
                   });
                   return (
@@ -643,7 +655,7 @@ export default function DashboardPage() {
                       <div className="font-mono text-xs font-bold mb-2 flex justify-between items-center text-gray-400"><span>{dayNum}</span></div>
                       <div className="space-y-1.5">
                         {dayPlans.map(plan => {
-                          const dateObj = new Date(plan.publishDate);
+                          const dateObj = parseSafeDate(plan.publishDate);
                           const isValidDate = !isNaN(dateObj.getTime());
                           return (
                             <div key={plan.id} onClick={() => handleOpenModal(plan)} className={`p-1.5 rounded-xl border-2 text-[10px] leading-tight font-bold cursor-pointer transition-all hover:scale-[1.03] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] ${getStatusStyle(plan.status)}`}>
@@ -672,7 +684,7 @@ export default function DashboardPage() {
                       <div>
                         <h3 className="font-bold">{plan.title}</h3>
                         <p className="text-[10px] opacity-50 font-mono uppercase">
-                          {plan.status} • {new Date(plan.publishDate).toLocaleDateString('en-GB') !== 'Invalid Date' ? new Date(plan.publishDate).toLocaleDateString('en-GB') : 'No Date'}
+                          {plan.status} • {parseSafeDate(plan.publishDate).toLocaleDateString('en-GB')}
                         </p>
                       </div>
                     </div>
