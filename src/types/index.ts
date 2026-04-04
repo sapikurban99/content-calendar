@@ -1,12 +1,21 @@
+export interface User {
+  id: string; // The email will be used as the ID/username for simplicity
+  email: string;
+  name: string;
+  createdAt: string;
+}
+
 export interface Account {
   id: string;
   handle: string;
   name: string;
+  userId: string; // ✨ To link the account to the specific user
 }
 
 export interface ContentPlan {
   id: string;
   accountId: string;
+  userId: string; // ✨ To link the plan to the specific user
   title: string;
   status: string;
   publishDate: string;

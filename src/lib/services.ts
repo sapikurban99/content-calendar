@@ -1,6 +1,97 @@
 import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, query, where, setDoc, getDoc } from "firebase/firestore";
-import { db } from "./firebase";
-import type { Account, ContentPlan, TikTokProfile, TikTokPostAnalytics } from "@/types/index";
+import { db, auth } from "./firebase";
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import type { User, Account, ContentPlan, TikTokProfile, TikTokPostAnalytics } from "@/types/index";
+
+// 🚀 AUTHENTICATION (MOCK)
+export const registerUser = async (email: string, name: string): Promise<User> => {
+  const userId = email.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const docRef = doc(db, "users", userId);
+  const docSnap = await getDoc(docRef);
+  if (docSnap.exists()) {
+    throw new Error("Email already registered");
+  }
+  
+  const newUser: User = {
+    id: userId,
+    email,
+    name,
+    createdAt: new Date().toISOString()
+  };
+  
+  await setDoc(docRef, newUser);
+  // Auto-migrate on register
+  await reassignLegacyData(userId);
+  return newUser;
+};
+
+export const loginUser = async (email: string): Promise<User> => {
+  const userId = email.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const docRef = doc(db, "users", userId);
+  const docSnap = await getDoc(docRef);
+  
+  if (docSnap.exists()) {
+    const userData = docSnap.data() as User;
+    // Trigger migration check just in case on login
+    await reassignLegacyData(userId);
+    return userData;
+  }
+  throw new Error("User not found");
+};
+
+export const loginWithGoogleService = async (): Promise<User> => {
+  const provider = new GoogleAuthProvider();
+  const result = await signInWithPopup(auth, provider);
+  const user = result.user;
+  
+  if (!user.email) throw new Error("No email found in Google account");
+  
+  const userId = user.email.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const docRef = doc(db, "users", userId);
+  const docSnap = await getDoc(docRef);
+  
+  const userData: User = {
+    id: userId,
+    email: user.email,
+    name: user.displayName || "Google User",
+    createdAt: docSnap.exists() ? (docSnap.data() as User).createdAt : new Date().toISOString()
+  };
+  
+  // Create or update
+  await setDoc(doc(db, "users", userId), userData, { merge: true });
+  
+  // ⚡ Auto-Migrate legacy data to this new ID
+  await reassignLegacyData(userId);
+  
+  return userData;
+};
+
+/**
+ * ⚡ AUTO-MIGRATION: Mencari data lama (test/mock/admin) dan memindahkannya ke ID user yang baru login.
+ */
+export const reassignLegacyData = async (newUserId: string) => {
+  const staleIds = ["mock-user-123", "test-user", "admin", "mockuser"];
+  const collections = ["accounts", "content_plans", "profiles", "analytics_posts"];
+  
+  console.log(`[Migration] Checking legacy data for user: ${newUserId}`);
+
+  for (const collName of collections) {
+    for (const staleId of staleIds) {
+      const q = query(collection(db, collName), where("userId", "==", staleId));
+      const snap = await getDocs(q);
+      
+      const updates = snap.docs.map(d => 
+        updateDoc(doc(db, collName, d.id), { userId: newUserId })
+      );
+      
+      if (updates.length > 0) {
+        await Promise.all(updates);
+        console.log(`[Migration] Moved ${updates.length} items from ${staleId} to ${newUserId} in ${collName}`);
+      }
+    }
+  }
+};
+
 
 // ... [Existing CRUD Functions] ...
 
@@ -216,15 +307,17 @@ export const addAccount = async (account: Omit<Account, "id">) => {
   await setDoc(docRef, account);
 };
 
-export const getAccounts = async (): Promise<Account[]> => {
-  const snapshot = await getDocs(collection(db, "accounts"));
+export const getAccounts = async (userId: string): Promise<Account[]> => {
+  const q = query(collection(db, "accounts"), where("userId", "==", userId));
+  const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Account));
 };
 
-export const getContentPlans = async (accountId: string): Promise<ContentPlan[]> => {
+export const getContentPlans = async (accountId: string, userId: string): Promise<ContentPlan[]> => {
   const q = query(
     collection(db, "content_plans"), 
-    where("accountId", "==", accountId)
+    where("accountId", "==", accountId),
+    where("userId", "==", userId)
   );
   const snapshot = await getDocs(q);
   // Tambahkan fallback logic untuk sorting di client jika index firebase belum dibuat

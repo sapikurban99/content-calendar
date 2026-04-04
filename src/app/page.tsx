@@ -1,788 +1,158 @@
-"use client";
+import Link from "next/link";
+import { ArrowRight, Star, Sparkles, TrendingUp, Calendar, Users } from "lucide-react";
 
-import { useState, useEffect } from "react";
-import { onSnapshot, doc, collection, query, where } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { Plus, Video, Calendar as CalendarIcon, Trash2, Sparkles, Disc3, LayoutList, ChevronLeft, ChevronRight, Hash, AlignLeft, X, Link as LinkIcon, ExternalLink, RefreshCw, Activity, Heart, Users, Eye, MessageCircle, Share2, UserPlus, AtSign, Smartphone, Edit3 } from "lucide-react";
-import { 
-  getAccounts, 
-  getProfileStats, 
-  syncTikTokAnalytics, 
-  addAccount, 
-  getContentPlans, 
-  addContentPlan, 
-  updatePlanStatus, 
-  deleteContentPlan,
-  getSinglePostAnalytics,
-  syncSinglePostAnalytics,
-  updateContentPlan
-} from "@/lib/services";
-import type { Account, ContentPlan, TikTokProfile, TikTokPostAnalytics } from "@/types/index";
-// ✨ Sytem Utility: Safe Date Parser for old iOS (Safari < 15)
-const parseSafeDate = (dateStr: string | undefined | null) => {
-  if (!dateStr) return new Date();
-  const d = new Date(dateStr);
-  if (!isNaN(d.getTime())) return d;
-  
-  // Fallback ISO polyfill for iOS 14
-  const fallback = new Date(dateStr.replace(/-/g, '/').replace('T', ' '));
-  return isNaN(fallback.getTime()) ? new Date() : fallback;
-};
-
-export default function DashboardPage() {
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [selectedAccount, setSelectedAccount] = useState<string>("");
-  const [plans, setPlans] = useState<ContentPlan[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  // Analytics Stats
-  const [profileStats, setProfileStats] = useState<TikTokProfile | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
-
-  // View, Calendar, & Modal State
-  const [activeView, setActiveView] = useState<"list" | "calendar">("calendar");
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedPlan, setSelectedPlan] = useState<ContentPlan | null>(null);
-  const [postStats, setPostStats] = useState<TikTokPostAnalytics | null>(null); 
-  const [isSyncingPost, setIsSyncingPost] = useState(false); 
-
-  // Form State
-  const [newTitle, setNewTitle] = useState("");
-  const [newDate, setNewDate] = useState("");
-  const [newType, setNewType] = useState("Video");
-  const [newBrief, setNewBrief] = useState("");
-  const [newLink, setNewLink] = useState(""); 
-
-  // Modal & Logic State
-  const [isAddAccountOpen, setIsAddAccountOpen] = useState(false);
-  const [isAddPlanOpen, setIsAddPlanOpen] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [newAccHandle, setNewAccHandle] = useState("");
-  const [newAccName, setNewAccName] = useState("");
-
-  useEffect(() => {
-    fetchAccounts();
-  }, []);
-
-  useEffect(() => {
-    if (!selectedAccount) return;
-    setIsLoading(true);
-
-    const unsubscribeProfile = onSnapshot(doc(db, "profiles", selectedAccount), (docSnap) => {
-      if (docSnap.exists()) {
-        setProfileStats(docSnap.data() as TikTokProfile);
-      } else {
-        setProfileStats(null);
-      }
-    });
-
-    const plansQuery = query(
-      collection(db, "content_plans"),
-      where("accountId", "==", selectedAccount)
-    );
-
-    const unsubscribePlans = onSnapshot(plansQuery, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ContentPlan));
-      setPlans(data.sort((a, b) => parseSafeDate(b.publishDate).getTime() - parseSafeDate(a.publishDate).getTime()));
-      setIsLoading(false);
-    }, (error) => {
-      console.error("Plans listener error:", error);
-      setIsLoading(false);
-    });
-
-    return () => {
-      unsubscribeProfile();
-      unsubscribePlans();
-    };
-  }, [selectedAccount]);
-
-  // ✨ DERIVED STATE: Filtered plans based on current month/year
-  const filteredPlans = plans.filter(p => {
-    const d = parseSafeDate(p.publishDate);
-    return d.getMonth() === currentDate.getMonth() && d.getFullYear() === currentDate.getFullYear();
-  });
-
-  const fetchAccounts = async () => {
-    setIsLoading(true);
-    try {
-      const data = await getAccounts();
-      setAccounts(data);
-      if (data.length > 0) setSelectedAccount(data[0].id);
-    } catch (error) {
-      console.error("Error fetching accounts:", error);
-    }
-    setIsLoading(false);
-  };
-
-  const handleOpenModal = async (plan: ContentPlan) => {
-    setSelectedPlan(plan);
-    setPostStats(null); 
-    setIsEditing(false); // Reset edit mode
-    if (plan.link) {
-      const stats = await getSinglePostAnalytics(plan.id);
-      if (stats) setPostStats(stats);
-    }
-  };
-
-  const handleSyncPostStats = async () => {
-    if (!selectedPlan || !selectedPlan.link) return;
-    setIsSyncingPost(true);
-    try {
-      await syncSinglePostAnalytics(selectedPlan.id, selectedPlan.link);
-    } catch (error) {
-      console.error("Post sync error:", error);
-      alert("Failed to sync post stats... 😭");
-    } finally {
-      setIsSyncingPost(false);
-    }
-  };
-
-  const handleAddPlan = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedAccount || !newTitle || !newDate) {
-      alert("⚠️ Mohon isi semua field yang diperlukan!");
-      return;
-    }
-
-    try {
-      await addContentPlan({
-        accountId: selectedAccount,
-        title: newTitle,
-        link: newLink,
-        brief: newBrief,
-        publishDate: parseSafeDate(newDate).toISOString(),
-        contentType: newType,
-        status: "Ideation",
-      });
-
-      setNewTitle("");
-      setNewDate("");
-      setNewBrief("");
-      setNewLink("");
-      setIsAddPlanOpen(false);
-      alert("✅ Konten berhasil dijadwalkan!");
-    } catch (error: any) {
-      console.error("Save error:", error);
-      alert(`❌ Gagal menyimpan: ${error.message}`);
-    }
-  };
-
-  const handleSyncProfile = async () => {
-    if (!selectedAccount) return;
-    setIsSyncing(true);
-    try {
-      await syncTikTokAnalytics(selectedAccount);
-    } catch (error: any) {
-      alert("❌ Sync Error: " + error.message);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleUpdatePlan = async () => {
-    if (!selectedPlan) return;
-    setIsSyncing(true); // Reuse isSyncing as a general busy state or could use its own
-    try {
-      await updateContentPlan(selectedPlan.id, {
-        title: selectedPlan.title,
-        link: selectedPlan.link,
-        brief: selectedPlan.brief,
-        publishDate: selectedPlan.publishDate,
-        contentType: selectedPlan.contentType,
-        status: selectedPlan.status
-      });
-      setIsEditing(false);
-      alert("✅ Plan Updated!");
-    } catch (error: any) {
-      alert("❌ Failed to update plan: " + error.message);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleDelete = async (e: React.MouseEvent, planId: string) => {
-    e.stopPropagation();
-    if (!confirm("Hapus rencana ini?")) return;
-    await deleteContentPlan(planId);
-    if (selectedPlan?.id === planId) setSelectedPlan(null);
-  };
-
-  const handleStatusChange = async (e: React.MouseEvent, planId: string, currentStatus: string) => {
-    e.stopPropagation();
-    const nextStatus = currentStatus === "Ideation" ? "Filming" : currentStatus === "Filming" ? "Editing" : "Posted";
-    await updatePlanStatus(planId, nextStatus);
-
-    if (selectedPlan?.id === planId) {
-      setSelectedPlan({ ...selectedPlan, status: nextStatus });
-    }
-  };
-
-  const handleAddAccount = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newAccHandle || !newAccName) return;
-
-    try {
-      const handle = newAccHandle.replace("@", "").trim();
-      await addAccount({
-        handle: handle,
-        name: newAccName,
-      });
-      
-      setNewAccHandle("");
-      setNewAccName("");
-      setIsAddAccountOpen(false);
-      await fetchAccounts();
-      alert(`✅ Akun @${handle} berhasil ditambahkan!`);
-    } catch (error: any) {
-      alert("❌ Gagal menambah akun: " + error.message);
-    }
-  };
-
-  const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
-  const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
-
-  const daysInMonth = getDaysInMonth(currentDate.getFullYear(), currentDate.getMonth());
-  const firstDay = getFirstDayOfMonth(currentDate.getFullYear(), currentDate.getMonth());
-  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-
-  const prevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
-  const nextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
-
-  const getStatusStyle = (status: string) => {
-    switch (status) {
-      case "Ideation": return "bg-cyan-100 text-cyan-700 border-cyan-300";
-      case "Filming": return "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-300";
-      case "Editing": return "bg-purple-100 text-purple-700 border-purple-300";
-      case "Posted": return "bg-lime-300 text-lime-900 border-lime-400 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]";
-      default: return "bg-gray-100 text-gray-700 border-gray-300";
-    }
-  };
-
+export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-[#fafafa] bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:20px_20px] text-gray-900 font-sans selection:bg-fuchsia-300 selection:text-black pb-12 relative">
+    <div className="min-h-screen bg-[#fafafa] bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:20px_20px] text-gray-900 font-sans selection:bg-fuchsia-300 selection:text-black overflow-x-hidden">
 
-      {/* ✨ DETAIL & EDIT MODAL */}
-      {selectedPlan && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm transition-opacity" onClick={() => setSelectedPlan(null)}>
-          <div className="bg-white rounded-3xl border-2 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] w-full max-w-lg max-h-[95vh] overflow-y-auto relative no-scrollbar" onClick={(e) => e.stopPropagation()}>
-            {/* Modal Header */}
-            <div className="border-b-2 border-black p-5 flex items-center justify-between bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:10px_10px]">
-              <div className="flex items-center gap-3">
-                <span className={`font-mono text-xs uppercase tracking-widest font-bold px-3 py-1 rounded-full border ${getStatusStyle(selectedPlan.status)}`}>
-                  {selectedPlan.status}
-                </span>
-                <span className="font-mono text-xs text-gray-500 bg-white px-2 py-1 rounded-md border-2 border-black flex items-center gap-1">
-                  <CalendarIcon className="w-3 h-3" /> {parseSafeDate(selectedPlan.publishDate).toLocaleDateString('en-GB')}
-                </span>
+      {/* 🌟 NAVBAR */}
+      <nav className="fixed top-0 w-full backdrop-blur-md bg-white/70 border-b-2 border-black z-50 px-6 py-4 flex justify-between items-center transition-all">
+        <div className="flex items-center gap-2">
+          <svg className="w-8 h-8" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12.525.02c1.31-.036 2.612-.012 3.914-.012.036 1.662.63 3.193 1.82 4.316.89.843 1.986 1.406 3.167 1.63v3.743c-1.37-.156-2.61-.745-3.616-1.67-.183-.17-.353-.35-.512-.54v7.412a7.11 7.11 0 0 1-7.11 7.11 7.11 7.11 0 0 1-7.11-7.11 7.11 7.11 0 0 1 7.11-7.11c.2 0 .4.01.6.03V11.2a3.333 3.333 0 1 0 3.13 3.333V0l.01.02z"></path>
+          </svg>
+          <span className="text-xl font-black italic tracking-tighter hover:scale-105 transition-transform cursor-pointer">
+            TikTok<span className="text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-500 to-cyan-400">Planner</span>
+          </span>
+        </div>
+        <div className="flex items-center gap-4">
+          <Link href="/login" className="hidden sm:inline-block font-bold font-mono text-xs uppercase tracking-widest hover:text-fuchsia-600 transition-colors">
+            Masuk
+          </Link>
+          <Link href="/register" className="px-5 py-2 bg-black text-white rounded-xl font-bold font-mono text-xs uppercase tracking-widest border-2 border-black hover:bg-cyan-400 hover:text-black hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-1 active:shadow-none transition-all">
+            Mulai Gratis
+          </Link>
+        </div>
+      </nav>
+
+      {/* 🚀 HERO SECTION */}
+      <section className="pt-32 pb-20 px-4 max-w-6xl mx-auto flex flex-col items-center text-center relative">
+        <div className="absolute top-20 left-10 w-24 h-24 bg-cyan-300 rounded-full blur-3xl opacity-50 mix-blend-multiply animate-pulse"></div>
+        <div className="absolute top-40 right-10 w-32 h-32 bg-fuchsia-300 rounded-full blur-3xl opacity-50 mix-blend-multiply animate-pulse delay-700"></div>
+
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border-2 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] mb-8 transform -rotate-2 hover:rotate-0 transition-transform">
+          <Sparkles className="w-4 h-4 text-fuchsia-500" />
+          <span className="font-mono text-[10px] font-black uppercase tracking-widest">Platform Creator #1</span>
+        </div>
+
+        <h1 className="text-5xl md:text-7xl font-black tracking-tighter leading-[1.1] mb-6 max-w-4xl cursor-default">
+          Rencanakan Konten TikTok Tanpa <span className="relative inline-block">
+            <span className="relative z-10 text-white italic">Pusing</span>
+            <span className="absolute inset-0 bg-black -rotate-2 scale-110 -z-0"></span>
+          </span>
+        </h1>
+
+        <p className="text-lg md:text-xl text-black font-medium max-w-2xl mb-10 leading-relaxed font-mono">
+          Kalender editorial premium dikhususkan untuk TikTok Creator. Lacak metrik, atur status produksi, dan dominasi FYP sekarang juga!
+        </p>
+
+        <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+          <Link href="/register" className="px-8 py-4 bg-fuchsia-500 text-black border-4 border-black rounded-2xl font-black text-lg tracking-wide hover:bg-cyan-400 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 active:translate-y-2 active:shadow-none transition-all flex items-center justify-center gap-2">
+            BUAT AKUN SEKARANG <ArrowRight className="w-5 h-5" />
+          </Link>
+        </div>
+      </section>
+
+      {/* ✨ FEATURES SECTION */}
+      <section className="py-20 px-4 bg-black text-white border-y-4 border-black relative overflow-hidden">
+        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#ffffff_2px,transparent_2px)] [background-size:24px_24px]"></div>
+
+        <div className="max-w-6xl mx-auto relative z-10">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl md:text-5xl font-black italic tracking-tighter mb-4 text-cyan-400">Tools Kelas Dewa</h2>
+            <p className="font-mono text-white/80 text-sm uppercase tracking-widest">Fitur yang bikin konten kamu meledak</p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-8">
+            <div className="bg-[#111] border-2 border-white/20 p-8 rounded-3xl hover:border-cyan-400 hover:-translate-y-2 transition-all group">
+              <div className="w-14 h-14 bg-cyan-400/20 text-cyan-400 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                <Calendar className="w-7 h-7" />
               </div>
-              <button onClick={() => setSelectedPlan(null)} className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors border-2 border-transparent hover:border-black">
-                <X className="w-5 h-5" />
-              </button>
+              <h3 className="text-2xl font-black mb-3">Visual Calendar</h3>
+              <p className="text-white/70 font-mono text-sm leading-relaxed">Kelola semua ide konten dan jadwal rilis dalam satu kalender interaktif yang memanjakan mata.</p>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-6 space-y-6">
-              {selectedPlan.coverUrl && (
-                <div 
-                  className="w-full aspect-video rounded-2xl border-2 border-black overflow-hidden shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] relative group/cover cursor-zoom-in"
-                  onClick={() => setPreviewImage(selectedPlan.coverUrl!)}
-                >
-                  <img src={selectedPlan.coverUrl} alt="Video Cover" className="w-full h-full object-cover transition-transform duration-500 group-hover/cover:scale-105" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover/cover:opacity-100 transition-opacity flex items-end p-4">
-                    <span className="text-white font-mono text-[10px] font-bold tracking-widest flex items-center gap-2">
-                      <Sparkles className="w-3 h-3" /> KLIK UNTUK MEMPERBESAR
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {isEditing ? (
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-[10px] font-black font-mono text-gray-400 uppercase mb-1 block">Judul Konten</label>
-                    <input 
-                      type="text" 
-                      className="w-full px-4 py-3 border-2 border-black rounded-xl font-bold outline-none focus:ring-2 ring-fuchsia-500/20"
-                      value={selectedPlan.title}
-                      onChange={(e) => setSelectedPlan({...selectedPlan, title: e.target.value})}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black font-mono text-gray-400 uppercase mb-1 block">📅 Tanggal Publish</label>
-                    <input 
-                      type="date" 
-                      className="w-full px-4 py-2 bg-gray-50 border-2 border-black rounded-xl font-mono text-xs outline-none focus:ring-2 ring-fuchsia-500/20"
-                      value={selectedPlan.publishDate ? parseSafeDate(selectedPlan.publishDate).toISOString().split('T')[0] : ''}
-                      onChange={(e) => setSelectedPlan({...selectedPlan, publishDate: new Date(e.target.value).toISOString()})}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] font-black font-mono text-gray-400 uppercase mb-1 block">Ubah Status</label>
-                      <select 
-                        className="w-full px-3 py-2 border-2 border-black rounded-xl font-mono text-xs outline-none"
-                        value={selectedPlan.status}
-                        onChange={(e) => setSelectedPlan({...selectedPlan, status: e.target.value as any})}
-                      >
-                        <option>Ideation</option>
-                        <option>Filming</option>
-                        <option>Editing</option>
-                        <option>Posted</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black font-mono text-gray-400 uppercase mb-1 block">Format Konten</label>
-                      <select 
-                        className="w-full px-3 py-2 border-2 border-black rounded-xl font-mono text-xs outline-none"
-                        value={selectedPlan.contentType}
-                        onChange={(e) => setSelectedPlan({...selectedPlan, contentType: e.target.value as any})}
-                      >
-                        <option>Video</option>
-                        <option>Carousel</option>
-                        <option>Story</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h2 className="text-2xl font-black tracking-tight mb-2">{selectedPlan.title}</h2>
-                    <div className="flex items-center gap-2 text-sm font-mono text-gray-500">
-                      <Hash className="w-4 h-4" /> {selectedPlan.contentType}
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => setIsEditing(true)}
-                    className="p-2 bg-gray-100 rounded-lg hover:bg-black hover:text-white transition-all border-2 border-transparent hover:border-black"
-                    title="Edit Plan"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-
-              {selectedPlan.link && !isEditing && (
-                <div className="bg-cyan-50 border-2 border-cyan-200 rounded-xl p-3 flex items-center justify-between group">
-                  <div className="flex items-center gap-2 truncate">
-                    <LinkIcon className="w-4 h-4 text-cyan-600 flex-shrink-0" />
-                    <span className="text-sm font-mono text-cyan-800 truncate">{selectedPlan.link}</span>
-                  </div>
-                  <a href={selectedPlan.link.startsWith('http') ? selectedPlan.link : `https://${selectedPlan.link}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-white rounded-lg border-2 border-cyan-200 hover:bg-cyan-100 transition-colors flex-shrink-0">
-                    <ExternalLink className="w-4 h-4 text-cyan-700" />
-                  </a>
-                </div>
-              )}
-
-              {isEditing && (
-                <div>
-                  <label className="text-[10px] font-black font-mono text-gray-400 uppercase mb-1 block">Link Postingan</label>
-                  <input 
-                    type="url" 
-                    className="w-full px-4 py-3 border-2 border-black rounded-xl font-mono text-xs outline-none"
-                    value={selectedPlan.link}
-                    onChange={(e) => setSelectedPlan({...selectedPlan, link: e.target.value})}
-                  />
-                </div>
-              )}
-
-              {selectedPlan.link && !isEditing && (
-                <div className="bg-white border-2 border-black rounded-xl p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-mono font-bold text-sm flex items-center gap-2 text-gray-700">
-                      <Disc3 className={`w-4 h-4 text-fuchsia-500 ${isSyncingPost ? 'animate-spin' : ''}`} /> 
-                      Statistik Postingan
-                    </h3>
-                    <button 
-                      onClick={handleSyncPostStats}
-                      disabled={isSyncingPost}
-                      className={`text-[10px] font-mono font-bold px-3 py-1.5 border-2 border-black rounded-lg transition-all ${isSyncingPost ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-fuchsia-100 text-fuchsia-900 hover:bg-fuchsia-200 hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none'}`}
-                    >
-                      {isSyncingPost ? 'LOADING...' : 'Update Data'}
-                    </button>
-                  </div>
-
-                  {postStats ? (
-                    <div className="flex flex-col sm:flex-row gap-4">
-                      {/* Cover Thumbnail Preview */}
-                      {postStats.coverUrl && (
-                        <div 
-                          className="w-full sm:w-24 aspect-[9/16] sm:aspect-square rounded-lg border-2 border-black overflow-hidden bg-gray-50 flex-shrink-0 cursor-zoom-in group/sync"
-                          onClick={() => setPreviewImage(postStats.coverUrl!)}
-                        >
-                          <img src={postStats.coverUrl} className="w-full h-full object-cover transition-transform group-hover/sync:scale-110" alt="Sync Preview" />
-                        </div>
-                      )}
-
-                      <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2">
-                        <div className="flex flex-col items-center justify-center bg-gray-50 border border-gray-200 rounded-lg p-2">
-                          <Eye className="w-4 h-4 text-gray-500 mb-1" />
-                          <span className="font-mono font-black text-[10px] sm:text-sm">{postStats.playCount?.toLocaleString() || 0}</span>
-                        </div>
-                        <div className="flex flex-col items-center justify-center bg-fuchsia-50 border border-fuchsia-200 rounded-lg p-2">
-                          <Heart className="w-4 h-4 text-fuchsia-600 mb-1" />
-                          <span className="font-mono font-black text-[10px] sm:text-sm text-fuchsia-700">{postStats.likeCount?.toLocaleString() || 0}</span>
-                        </div>
-                        <div className="flex flex-col items-center justify-center bg-blue-50 border border-blue-200 rounded-lg p-2">
-                          <MessageCircle className="w-4 h-4 text-blue-600 mb-1" />
-                          <span className="font-mono font-black text-[10px] sm:text-sm text-blue-700">{postStats.commentCount?.toLocaleString() || 0}</span>
-                        </div>
-                        <div className="flex flex-col items-center justify-center bg-cyan-50 border border-cyan-200 rounded-lg p-2">
-                          <Share2 className="w-4 h-4 text-cyan-600 mb-1" />
-                          <span className="font-mono font-black text-[10px] sm:text-sm text-cyan-700">{postStats.shareCount?.toLocaleString() || 0}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-center text-xs font-mono text-gray-400 py-2">
-                      No stats synced yet. Hit the update!
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div>
-                <label className="text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-2">
-                  <AlignLeft className="w-4 h-4" /> Brief / Script
-                </label>
-                {isEditing ? (
-                  <textarea
-                    className="w-full px-4 py-3 bg-gray-50 border-2 border-black rounded-xl outline-none font-mono text-sm min-h-[120px] focus:bg-white resize-none"
-                    value={selectedPlan.brief}
-                    onChange={(e) => setSelectedPlan({...selectedPlan, brief: e.target.value})}
-                  />
-                ) : (
-                  <div className="bg-gray-50 border-2 border-gray-200 rounded-xl p-4 min-h-[120px] max-h-[250px] overflow-y-auto font-mono text-sm whitespace-pre-wrap text-gray-700">
-                    {selectedPlan.brief || (
-                      <span className="text-gray-400 italic">No brief attached to this plan...</span>
-                    )}
-                  </div>
-                )}
+            <div className="bg-[#111] border-2 border-white/20 p-8 rounded-3xl hover:border-fuchsia-400 hover:-translate-y-2 transition-all group">
+              <div className="w-14 h-14 bg-fuchsia-400/20 text-fuchsia-400 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                <TrendingUp className="w-7 h-7" />
               </div>
+              <h3 className="text-2xl font-black mb-3">Live Analytics</h3>
+              <p className="text-white/70 font-mono text-sm leading-relaxed">Tarik data Views, Likes, dan Engagement langsung dari TikTok ke dashboard pribadimu.</p>
             </div>
 
-            {/* Modal Footer */}
-            <div className="p-5 border-t-2 border-black bg-gray-50 flex flex-col sm:flex-row justify-between gap-3 sm:gap-0">
-              {isEditing ? (
-                <>
-                  <button onClick={() => setIsEditing(false)} className="px-4 py-2 text-gray-500 font-bold font-mono text-sm hover:bg-gray-200 rounded-lg transition-colors w-full sm:w-auto">BATAL</button>
-                  <button onClick={handleUpdatePlan} className="px-8 py-2 bg-black text-white font-bold font-mono text-sm rounded-xl hover:bg-fuchsia-600 transition-all shadow-[4px_4px_0px_0px_rgba(0,0,0,0.2)] active:translate-y-1 active:shadow-none w-full sm:w-auto">SIMPAN PERUBAHAN ➔</button>
-                </>
-              ) : (
-                <>
-                  <button onClick={(e) => handleDelete(e, selectedPlan.id)} className="px-4 py-2 text-red-600 font-bold font-mono text-sm flex items-center justify-center gap-2 hover:bg-red-100 rounded-lg transition-colors w-full sm:w-auto"><Trash2 className="w-4 h-4" /> HAPUS RENCANA</button>
-                  <button onClick={(e) => handleStatusChange(e, selectedPlan.id, selectedPlan.status)} className="px-6 py-2 bg-black text-white font-bold font-mono text-sm rounded-xl hover:bg-gray-800 transition-colors shadow-[2px_2px_0px_0px_rgba(200,200,200,1)] active:translate-y-1 active:shadow-none w-full sm:w-auto text-center">LANJUT STATUS ➔</button>
-                </>
-              )}
+            <div className="bg-[#111] border-2 border-white/20 p-8 rounded-3xl hover:border-lime-400 hover:-translate-y-2 transition-all group">
+              <div className="w-14 h-14 bg-lime-400/20 text-lime-400 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                <Users className="w-7 h-7" />
+              </div>
+              <h3 className="text-2xl font-black mb-3">Multi-Account</h3>
+              <p className="text-white/70 font-mono text-sm leading-relaxed">Kelola banyak akun TikTok klien atau pribadi tanpa perlu login-logout aplikasi aslinya.</p>
             </div>
           </div>
         </div>
-      )}
+      </section>
 
-      {/* Header */}
-      <header className="backdrop-blur-md bg-white/70 border-b-2 border-black px-4 md:px-8 py-4 flex flex-col md:flex-row items-center justify-between gap-4 sticky top-0 z-30 shadow-[0px_4px_0px_0px_rgba(0,0,0,1)]">
-        <div className="flex items-center justify-between w-full md:w-auto">
-          <div className="flex items-center gap-2 md:gap-3">
-            <CalendarIcon className="w-6 h-6 md:w-8 md:h-8 text-black" />
-            <h1 className="text-xl md:text-2xl font-black tracking-tighter hover:scale-[1.02] transition-transform cursor-default">Content <span className="text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-500 to-cyan-400">Planner</span></h1>
-          </div>
-        </div>
+      {/* 🤙 CTA SECTION */}
+      <section className="py-24 px-4 bg-lime-300 text-black text-center border-b-4 border-black relative overflow-hidden">
+        <Star className="absolute top-10 left-10 w-24 h-24 opacity-20 -rotate-12" />
+        <Star className="absolute bottom-10 right-10 w-32 h-32 opacity-20 rotate-45" />
 
-        <div className="flex items-center overflow-x-auto no-scrollbar w-full md:w-auto gap-2 md:gap-3 pb-1 md:pb-0">
-          <button onClick={() => setIsAddPlanOpen(true)} className="whitespace-nowrap flex-shrink-0 px-4 md:px-6 py-2 bg-black text-white rounded-full font-bold text-xs tracking-wide flex items-center gap-2 hover:bg-fuchsia-600 transition-all shadow-[4px_4px_0px_0px_rgba(0,0,0,0.2)] active:translate-y-1 active:shadow-none"><Plus className="w-4 h-4" /> <span className="hidden sm:inline">Buat Konten</span></button>
-          <div className="w-[2px] h-8 bg-gray-200 mx-1 hidden md:block"></div>
-          <select className="flex-1 md:flex-none border-2 border-black rounded-full px-3 md:px-5 py-2 bg-white font-mono text-xs md:text-sm shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none cursor-pointer" value={selectedAccount} onChange={(e) => setSelectedAccount(e.target.value)}>
-            {accounts.map(acc => <option key={acc.id} value={acc.id}>@{acc.handle}</option>)}
-          </select>
-          <button onClick={() => setIsAddAccountOpen(true)} className="flex-shrink-0 w-8 h-8 md:w-10 md:h-10 rounded-full bg-white border-2 border-black flex items-center justify-center hover:scale-110 active:scale-95 transition-all text-black"><UserPlus className="w-4 h-4 md:w-5 md:h-5" /></button>
-        </div>
-      </header>
+        <h2 className="text-5xl md:text-7xl font-black tracking-tighter mb-6">Siap FYP?</h2>
+        <p className="font-mono text-lg font-bold mb-10 max-w-md mx-auto">Jangan biarkan ide kontenmu hilang. Simpan, jadwalkan, dan ukur hasilnya.</p>
+        <Link href="/register" className="inline-block px-10 py-5 bg-black text-white rounded-full font-black text-xl tracking-wider hover:bg-fuchsia-600 hover:scale-105 transition-all shadow-[8px_8px_0px_0px_rgba(255,255,255,0.5)]">
+          MULAI PLANNER-MU
+        </Link>
+      </section>
 
-      {/* ✨ ADD CONTENT PLAN MODAL */}
-      {isAddPlanOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-md transition-all" onClick={() => setIsAddPlanOpen(false)}>
-          <div className="bg-white rounded-3xl border-2 border-black shadow-[10px_10px_0px_0px_rgba(0,0,0,1)] w-full max-w-md max-h-[90vh] overflow-y-auto relative no-scrollbar" onClick={(e) => e.stopPropagation()}>
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-8">
-                <h2 className="text-2xl font-black italic tracking-tight flex items-center gap-2"><Plus className="w-6 h-6 text-fuchsia-500" /> Rencana Baru</h2>
-                <button onClick={() => setIsAddPlanOpen(false)} className="bg-gray-100 p-2 rounded-full hover:bg-black hover:text-white transition-colors"><X className="w-4 h-4" /></button>
+      {/* BRANDED FOOTER (Header Match Layout) */}
+      <footer className="bg-[#F8FAF5] text-black pt-16 pb-8 px-6 lg:px-12 mt-20 border-t-2 border-black">
+        <div className="max-w-7xl mx-auto">
+          {/* Top Section */}
+          <div className="flex flex-col md:flex-row justify-between mb-16 gap-10">
+            {/* Left: Branding & Desc */}
+            <div className="max-w-sm">
+              <div className="flex items-center gap-3 mb-6 group cursor-default">
+                <div className="w-10 h-10 bg-black text-white rounded-full flex items-center justify-center shadow-[3px_3px_0px_0px_rgba(236,72,153,1)]">
+                  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12.525.02c1.31-.036 2.612-.012 3.914-.012.036 1.662.63 3.193 1.82 4.316.89.843 1.986 1.406 3.167 1.63v3.743c-1.37-.156-2.61-.745-3.616-1.67-.183-.17-.353-.35-.512-.54v7.412a7.11 7.11 0 0 1-7.11 7.11 7.11 7.11 0 0 1-7.11-7.11 7.11 7.11 0 0 1 7.11-7.11c.2 0 .4.01.6.03V11.2a3.333 3.333 0 1 0 3.13 3.333V0l.01.02z"></path>
+                  </svg>
+                </div>
+                <span className="text-xl font-black italic tracking-tighter">TikTok<span className="text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-500 to-cyan-400">Planner</span></span>
               </div>
-              <form onSubmit={handleAddPlan} className="space-y-4">
-                <div className="group">
-                  <label className="text-[10px] font-black font-mono text-gray-400 uppercase mb-1 ml-1 block">Hook / Title</label>
-                  <input type="text" required placeholder="POV: You..." className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:border-black outline-none font-sans font-bold transition-all" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
-                </div>
-                <div className="group">
-                  <label className="text-[10px] font-black font-mono text-gray-400 uppercase mb-1 ml-1 block">Post Link (Optional)</label>
-                  <input type="url" placeholder="https://tiktok.com/..." className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:border-black outline-none font-mono text-xs transition-all" value={newLink} onChange={(e) => setNewLink(e.target.value)} />
-                </div>
-                <div className="group">
-                  <label className="text-[10px] font-black font-mono text-gray-400 uppercase mb-1 ml-1 block">Brief / Description</label>
-                  <textarea placeholder="Notes..." className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:border-black outline-none font-mono text-xs transition-all min-h-[100px] resize-none" value={newBrief} onChange={(e) => setNewBrief(e.target.value)} />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-black font-mono text-gray-400 uppercase mb-1 ml-1 block">Publish_Date</label>
-                    <input type="date" required className="w-full px-3 py-3 rounded-xl border-2 border-gray-200 focus:border-black outline-none" value={newDate} onChange={(e) => setNewDate(e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black font-mono text-gray-400 uppercase mb-1 ml-1 block">Format</label>
-                    <select className="w-full px-3 py-3 border-2 border-gray-200 rounded-xl focus:border-black outline-none" value={newType} onChange={(e) => setNewType(e.target.value)}>
-                      <option>Video</option><option>Carousel</option><option>Story</option>
-                    </select>
-                  </div>
-                </div>
-                <button type="submit" className="w-full bg-black text-white px-4 py-4 rounded-2xl font-black text-sm tracking-widest hover:bg-gradient-to-r hover:from-fuchsia-600 hover:to-cyan-500 transition-all shadow-[6px_6px_0px_0px_rgba(0,0,0,0.2)] mt-4">JADWALKAN KONTEN ➔</button>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ✨ ADD ACCOUNT MODAL */}
-      {isAddAccountOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-md transition-all" onClick={() => setIsAddAccountOpen(false)}>
-          <div className="bg-white rounded-3xl border-2 border-black shadow-[10px_10px_0px_0px_rgba(0,0,0,1)] w-full max-w-sm max-h-[90vh] overflow-y-auto relative no-scrollbar" onClick={(e) => e.stopPropagation()}>
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-black italic tracking-tight flex items-center gap-2"><UserPlus className="w-6 h-6 text-fuchsia-500" /> Tambah Profil</h2>
-                <button onClick={() => setIsAddAccountOpen(false)} className="bg-gray-100 p-2 rounded-full hover:bg-black hover:text-white transition-colors"><X className="w-4 h-4" /></button>
-              </div>
-              <form onSubmit={handleAddAccount} className="space-y-5">
-                <div className="group">
-                  <label className="text-[10px] font-black font-mono text-gray-400 uppercase mb-1 block">Handle_TikTok</label>
-                  <div className="relative">
-                    <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input type="text" required placeholder="john_doe" className="w-full pl-10 pr-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:border-black outline-none font-mono text-sm" value={newAccHandle} onChange={(e) => setNewAccHandle(e.target.value)} />
-                  </div>
-                </div>
-                <div className="group">
-                  <label className="text-[10px] font-black font-mono text-gray-400 uppercase mb-1 block">Display_Name</label>
-                  <div className="relative">
-                    <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input type="text" required placeholder="John Official" className="w-full pl-10 pr-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:border-black outline-none font-mono text-sm" value={newAccName} onChange={(e) => setNewAccName(e.target.value)} />
-                  </div>
-                </div>
-                <button type="submit" className="w-full bg-black text-white px-4 py-4 rounded-2xl font-black text-sm tracking-widest hover:bg-gradient-to-r hover:from-fuchsia-500 hover:to-cyan-400 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.3)]">Simpan Profil ➔</button>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <main className="max-w-7xl mx-auto px-4 md:px-8 mt-4 md:mt-8 grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 pb-12">
-        <div className="lg:col-span-4 xl:col-span-3 space-y-6 order-2 lg:order-1">
-          {/* ✨ LIVE_STATS PROFILE CARD (NOW ON TOP) */}
-          <div className="bg-white border-2 border-black rounded-3xl p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden group transition-all hover:translate-y-[-2px] hover:shadow-[10px_10px_0px_0px_rgba(0,0,0,1)]">
-            <div className="absolute -right-6 -bottom-6 opacity-[0.03] group-hover:scale-125 transition-transform">
-              <Activity className="w-32 h-32" />
-            </div>
-
-            <div className="flex flex-col items-center text-center mb-6 relative z-10">
-              <div className="relative mb-3">
-                <div className="absolute inset-0 bg-gradient-to-tr from-fuchsia-500 to-cyan-400 rounded-full animate-spin-slow opacity-20 blur-md"></div>
-                {profileStats?.avatar ? (
-                  <img src={profileStats.avatar} alt="Profile" className="w-20 h-20 rounded-full border-2 border-black relative z-10 object-cover" />
-                ) : (
-                  <div className="w-20 h-20 rounded-full border-2 border-black bg-gray-100 flex items-center justify-center relative z-10">
-                    <Users className="w-8 h-8 text-gray-300" />
-                  </div>
-                )}
-                <button 
-                  onClick={handleSyncProfile}
-                  disabled={isSyncing}
-                  className="absolute bottom-0 right-0 w-8 h-8 bg-black text-white hover:bg-fuchsia-600 border-2 border-white rounded-full z-20 flex items-center justify-center transition-all active:scale-90 disabled:bg-gray-400"
-                >
-                  <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
-              
-              <h3 className="text-xl font-black italic tracking-tight">{accounts.find(a => a.id === selectedAccount)?.name || "TikTok Account"}</h3>
-              <p className="text-xs font-bold font-mono text-gray-400 flex items-center gap-1 mt-1">
-                <AtSign className="w-3 h-3" /> {accounts.find(a => a.id === selectedAccount)?.handle?.toLowerCase() || selectedAccount}
+              <p className="text-black/60 text-sm leading-relaxed font-mono font-medium">
+                Platform cerdas untuk mengelola jadwal rilis. 
+                Optimalkan strategi konten TikTokmu untuk dominasi FYP.
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 relative z-10 border-t-2 border-black pt-6">
-              <div className="space-y-1">
-                <div className="flex items-center gap-1.5 text-gray-400">
-                  <Users className="w-3.5 h-3.5" /> <span className="text-[10px] font-black font-mono">FOLLOWERS</span>
-                </div>
-                <div className="text-xl font-black font-mono leading-none">
-                  {profileStats?.followersCount?.toLocaleString() || "0"}
-                </div>
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-1.5 text-fuchsia-500">
-                  <Heart className="w-3.5 h-3.5" /> <span className="text-[10px] font-bold font-mono uppercase">Hearts</span>
-                </div>
-                <div className="text-xl font-black font-mono leading-none text-fuchsia-600">
-                  {profileStats?.totalHeartsReceived?.toLocaleString() || "0"}
-                </div>
-              </div>
+            {/* Right: Links */}
+            <div className="flex flex-col md:items-start text-left">
+              <h4 className="font-black text-[11px] tracking-widest uppercase mb-6 text-black/40 font-mono">TAUTAN</h4>
+              <ul className="space-y-4 text-sm font-bold font-mono">
+                <li><Link href="/register" className="border-b-2 border-transparent hover:border-fuchsia-500 transition-all">Mulai Planner</Link></li>
+                <li><a href="https://pijarteknologi.id" target="_blank" rel="noopener noreferrer" className="border-b-2 border-transparent hover:border-cyan-400 transition-all">Pijar Teknologi</a></li>
+              </ul>
             </div>
           </div>
 
-          {/* ✨ DYNAMIC CONTENT SUMMARY */}
-          <div className="bg-gradient-to-br from-black to-gray-800 rounded-3xl p-6 text-white shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden group">
-            <Sparkles className="absolute -top-4 -right-4 w-16 h-16 text-white opacity-20 group-hover:rotate-12 transition-transform" />
-            <p className="text-[10px] font-bold font-mono tracking-widest text-fuchsia-400 mb-1 uppercase">Ringkasan Rencana</p>
-            <h2 className="text-xl font-black italic tracking-tighter mb-5">Status Konten</h2>
-            
-            <div className="space-y-3">
-              {[
-                { label: 'Ideation', count: filteredPlans.filter(p => p.status === 'Ideation').length, color: 'text-cyan-400' },
-                { label: 'Filming', count: filteredPlans.filter(p => p.status === 'Filming').length, color: 'text-fuchsia-400' },
-                { label: 'Editing', count: filteredPlans.filter(p => p.status === 'Editing').length, color: 'text-purple-400' },
-                { label: 'Posted', count: filteredPlans.filter(p => p.status === 'Posted').length, color: 'text-lime-400' },
-              ].map((stage) => (
-                <div key={stage.label} className="flex justify-between items-center text-xs font-mono border-b border-white/5 pb-2 last:border-0 last:pb-0">
-                  <span className="text-gray-400 uppercase tracking-wider">{stage.label}</span>
-                  <span className={`font-black ${stage.color} text-sm`}>{stage.count}</span>
-                </div>
-              ))}
-              
-              <div className="pt-4 mt-2 border-t border-white/10 flex justify-between items-center">
-                <span className="text-[10px] font-bold text-gray-500 font-mono">TOTAL KONTEN</span>
-                <span className="text-lg font-black font-mono text-white">{filteredPlans.length}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="lg:col-span-8 xl:col-span-9 space-y-6 order-1 lg:order-2">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white border-2 border-black rounded-2xl p-3 md:p-2 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-            <div className="flex gap-2">
-              <button onClick={() => setActiveView('calendar')} className={`flex-1 md:flex-none justify-center px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all ${activeView === 'calendar' ? 'bg-black text-white' : 'hover:bg-gray-100 text-gray-500'}`}><CalendarIcon className="w-4 h-4" /> Calendar</button>
-              <button onClick={() => setActiveView('list')} className={`flex-1 md:flex-none justify-center px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all ${activeView === 'list' ? 'bg-black text-white' : 'hover:bg-gray-100 text-gray-500'}`}><LayoutList className="w-4 h-4" /> List View</button>
-            </div>
-            
-            <div className="flex items-center justify-between md:justify-end md:gap-4 px-2 md:px-4 font-mono font-bold">
-              <button onClick={prevMonth} className="p-1 hover:bg-gray-100 rounded-lg transition-colors"><ChevronLeft className="w-5 h-5 text-black" /></button>
-              <div className="w-auto md:w-32 text-center uppercase tracking-tighter text-[10px] sm:text-xs md:text-sm flex-1">
-                <span className="inline">{monthNames[currentDate.getMonth()]}</span> {' '}
-                <span className="opacity-50 inline">{currentDate.getFullYear()}</span>
-              </div>
-              <button onClick={nextMonth} className="p-1 hover:bg-gray-100 rounded-lg transition-colors"><ChevronRight className="w-5 h-5 text-black" /></button>
-            </div>
-          </div>
-
-          {activeView === 'calendar' && (
-            <div className="bg-white border-2 border-black rounded-3xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] overflow-hidden">
-              <div className="grid grid-cols-7 border-b-2 border-black bg-gray-50">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (<div key={day} className="p-3 text-center font-mono text-xs font-bold uppercase border-r-2 border-black last:border-r-0">{day}</div>))}</div>
-              <div className="grid grid-cols-7">
-                {Array.from({ length: firstDay }).map((_, i) => (<div key={`empty-${i}`} className="min-h-[140px] p-2 border-b-2 border-r-2 border-gray-100 bg-gray-50/50"></div>))}
-                {Array.from({ length: daysInMonth }).map((_, i) => {
-                  const dayNum = i + 1;
-                  const dayPlans = plans.filter(p => {
-                    const d = parseSafeDate(p.publishDate);
-                    return d.getDate() === dayNum && d.getMonth() === currentDate.getMonth() && d.getFullYear() === currentDate.getFullYear();
-                  });
-                  return (
-                    <div key={dayNum} className="min-h-[140px] p-2 border-b-2 border-r-2 border-gray-100 hover:bg-gray-50 transition-colors group relative">
-                      <div className="font-mono text-xs font-bold mb-2 flex justify-between items-center text-gray-400"><span>{dayNum}</span></div>
-                      <div className="space-y-1.5">
-                        {dayPlans.map(plan => {
-                          const dateObj = parseSafeDate(plan.publishDate);
-                          const isValidDate = !isNaN(dateObj.getTime());
-                          return (
-                            <div key={plan.id} onClick={() => handleOpenModal(plan)} className={`p-1.5 rounded-xl border-2 text-[10px] leading-tight font-bold cursor-pointer transition-all hover:scale-[1.03] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] ${getStatusStyle(plan.status)}`}>
-                              <div className="flex items-start gap-2">
-                                {plan.coverUrl && <img src={plan.coverUrl} className="w-6 h-6 rounded object-cover" />}
-                                <div className="flex-1 truncate">{plan.title}</div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {activeView === 'list' && (
-            <div className="space-y-4">
-              {filteredPlans.length > 0 ? (
-                filteredPlans.map(plan => (
-                  <div key={plan.id} onClick={() => handleOpenModal(plan)} className={`bg-white border-2 cursor-pointer rounded-2xl p-4 flex items-center justify-between gap-4 transition-all hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] ${getStatusStyle(plan.status)}`}>
-                    <div className="flex items-center gap-4">
-                      {plan.coverUrl && <img src={plan.coverUrl} className="w-12 h-12 rounded-lg object-cover" />}
-                      <div>
-                        <h3 className="font-bold">{plan.title}</h3>
-                        <p className="text-[10px] opacity-50 font-mono uppercase">
-                          {plan.status} • {parseSafeDate(plan.publishDate).toLocaleDateString('en-GB')}
-                        </p>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-gray-300" />
-                  </div>
-                ))
-              ) : (
-                <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-3xl p-12 text-center flex flex-col items-center justify-center">
-                  <CalendarIcon className="w-12 h-12 text-gray-200 mb-4" />
-                  <h3 className="text-lg font-bold text-gray-400 italic">Belum Ada Rencana</h3>
-                  <p className="text-xs font-mono text-gray-300 mt-1 uppercase tracking-widest">Tidak ada konten untuk bulan {monthNames[currentDate.getMonth()]}</p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </main>
-
-      {/* ✨ BRANDED FOOTER */}
-      <footer className="max-w-7xl mx-auto px-4 md:px-8 border-t-2 border-black pt-8 pb-12 mt-8 flex flex-col md:flex-row items-center justify-between gap-6">
-        <div className="flex flex-col md:flex-row items-center gap-4 text-center md:text-left">
-          <div className="p-2 bg-black rounded-lg">
-            <CalendarIcon className="w-5 h-5 text-fuchsia-500" />
-          </div>
-          <div>
-            <p className="text-xs font-bold font-mono text-gray-500 uppercase tracking-tighter">
+          {/* Bottom Section */}
+          <div className="pt-6 border-t-2 border-black/10 flex flex-col-reverse md:flex-row items-center justify-between gap-6">
+            <p className="text-xs font-bold font-mono text-black/40 uppercase tracking-tight">
               © 2026 Pijar Teknologi. All rights reserved.
             </p>
-            <div className="flex items-center gap-2 mt-1 justify-center md:justify-start">
-              <span className="px-2 py-0.5 bg-gray-100 text-[9px] font-black font-mono rounded border border-gray-200">v1.0.0</span>
-              <span className="w-1 h-1 bg-green-500 rounded-full animate-pulse"></span>
-              <span className="text-[9px] font-bold font-mono text-gray-400 uppercase tracking-widest">Stable Production</span>
+            <div className="flex items-center gap-6 text-black">
+              <a href="https://www.linkedin.com/company/pijar-teknologi-indonesia/" target="_blank" rel="noopener noreferrer" className="hover:text-fuchsia-500 hover:scale-110 transition-all">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"></path></svg>
+              </a>
+              <a href="https://www.instagram.com/pijarteknologi.id/" target="_blank" rel="noopener noreferrer" className="hover:text-fuchsia-600 hover:scale-110 transition-all">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12.315 2c2.43 0 2.784.013 3.808.06 1.064.049 1.791.218 2.427.465a4.902 4.902 0 011.772 1.153 4.902 4.902 0 011.153 1.772c.247.636.416 1.363.465 2.427.048 1.067.06 1.407.06 4.123v.08c0 2.643-.012 2.987-.06 4.043-.049 1.064-.218 1.791-.465 2.427a4.902 4.902 0 01-1.153 1.772 4.902 4.902 0 01-1.772 1.153c-.636.247-1.363.416-2.427.465-1.067.048-1.407.06-4.123.06h-.08c-2.643 0-2.987-.012-4.043-.06-1.064-.049-1.791-.218-2.427-.465a4.902 4.902 0 01-1.772-1.153 4.902 4.902 0 01-1.153-1.772c-.247-.636-.416-1.363-.465-2.427-.047-1.024-.06-1.379-.06-3.808v-.63c0-2.43.013-2.784.06-3.808.049-1.064.218-1.791.465-2.427a4.902 4.902 0 011.153-1.772A4.902 4.902 0 015.45 2.525c.636-.247 1.363-.416 2.427-.465C8.901 2.013 9.256 2 11.685 2h.63zm-.081 1.802h-.468c-2.456 0-2.784.011-3.807.058-.975.045-1.504.207-1.857.344-.467.182-.8.398-1.15.748-.35.35-.566.683-.748 1.15-.137.353-.3.882-.344 1.857-.047 1.023-.058 1.351-.058 3.807v.468c0 2.456.011 2.784.058 3.807.045.975.207 1.504.344 1.857.182.466.399.8.748 1.15.35.35.683.566 1.15.748.353.137.882.3 1.857.344 1.054.048 1.37.058 4.041.058h.08c2.597 0 2.917-.01 3.96-.058.976-.045 1.505-.207 1.858-.344.466-.182.8-.398 1.15-.748.35-.35.566-.683.748-1.15.137-.353.3-.882.344-1.857.048-1.055.058-1.37.058-4.041v-.08c0-2.597-.01-2.917-.058-3.96-.045-.976-.207-1.505-.344-1.858a3.097 3.097 0 00-.748-1.15 3.098 3.098 0 00-1.15-.748c-.353-.137-.882-.3-1.857-.344-1.023-.047-1.351-.058-3.807-.058zM12 6.865a5.135 5.135 0 110 10.27 5.135 5.135 0 010-10.27zm0 1.802a3.333 3.333 0 100 6.666 3.333 3.333 0 000-6.666zm5.338-3.205a1.2 1.2 0 110 2.4 1.2 1.2 0 010-2.4z"></path></svg>
+              </a>
+              <a href="https://www.tiktok.com/@pijarteknologi.id" target="_blank" rel="noopener noreferrer" className="hover:text-cyan-500 hover:scale-110 transition-all">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12.525.02c1.31-.036 2.612-.012 3.914-.012.036 1.662.63 3.193 1.82 4.316.89.843 1.986 1.406 3.167 1.63v3.743c-1.37-.156-2.61-.745-3.616-1.67-.183-.17-.353-.35-.512-.54v7.412a7.11 7.11 0 0 1-7.11 7.11 7.11 7.11 0 0 1-7.11-7.11 7.11 7.11 0 0 1 7.11-7.11c.2 0 .4.01.6.03V11.2a3.333 3.333 0 1 0 3.13 3.333V0l.01.02z"></path></svg>
+              </a>
             </div>
           </div>
         </div>
-
-        <div className="flex items-center gap-6">
-          <a href="https://www.linkedin.com/company/pijar-teknologi-indonesia/" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-black transition-all hover:scale-110 active:scale-95">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"></path></svg>
-          </a>
-          <a href="https://www.instagram.com/pijarteknologi.id/" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-fuchsia-600 transition-all hover:scale-110 active:scale-95">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12.315 2c2.43 0 2.784.013 3.808.06 1.064.049 1.791.218 2.427.465a4.902 4.902 0 011.772 1.153 4.902 4.902 0 011.153 1.772c.247.636.416 1.363.465 2.427.048 1.067.06 1.407.06 4.123v.08c0 2.643-.012 2.987-.06 4.043-.049 1.064-.218 1.791-.465 2.427a4.902 4.902 0 01-1.153 1.772 4.902 4.902 0 01-1.772 1.153c-.636.247-1.363.416-2.427.465-1.067.048-1.407.06-4.123.06h-.08c-2.643 0-2.987-.012-4.043-.06-1.064-.049-1.791-.218-2.427-.465a4.902 4.902 0 01-1.772-1.153 4.902 4.902 0 01-1.153-1.772c-.247-.636-.416-1.363-.465-2.427-.047-1.024-.06-1.379-.06-3.808v-.63c0-2.43.013-2.784.06-3.808.049-1.064.218-1.791.465-2.427a4.902 4.902 0 011.153-1.772A4.902 4.902 0 015.45 2.525c.636-.247 1.363-.416 2.427-.465C8.901 2.013 9.256 2 11.685 2h.63zm-.081 1.802h-.468c-2.456 0-2.784.011-3.807.058-.975.045-1.504.207-1.857.344-.467.182-.8.398-1.15.748-.35.35-.566.683-.748 1.15-.137.353-.3.882-.344 1.857-.047 1.023-.058 1.351-.058 3.807v.468c0 2.456.011 2.784.058 3.807.045.975.207 1.504.344 1.857.182.466.399.8.748 1.15.35.35.683.566 1.15.748.353.137.882.3 1.857.344 1.054.048 1.37.058 4.041.058h.08c2.597 0 2.917-.01 3.96-.058.976-.045 1.505-.207 1.858-.344.466-.182.8-.398 1.15-.748.35-.35.566-.683.748-1.15.137-.353.3-.882.344-1.857.048-1.055.058-1.37.058-4.041v-.08c0-2.597-.01-2.917-.058-3.96-.045-.976-.207-1.505-.344-1.858a3.097 3.097 0 00-.748-1.15 3.098 3.098 0 00-1.15-.748c-.353-.137-.882-.3-1.857-.344-1.023-.047-1.351-.058-3.807-.058zM12 6.865a5.135 5.135 0 110 10.27 5.135 5.135 0 010-10.27zm0 1.802a3.333 3.333 0 100 6.666 3.333 3.333 0 000-6.666zm5.338-3.205a1.2 1.2 0 110 2.4 1.2 1.2 0 010-2.4z"></path></svg>
-          </a>
-          <a href="https://www.tiktok.com/@pijarteknologi.id" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-cyan-500 transition-all hover:scale-110 active:scale-95">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12.525.02c1.31-.036 2.612-.012 3.914-.012.036 1.662.63 3.193 1.82 4.316.89.843 1.986 1.406 3.167 1.63v3.743c-1.37-.156-2.61-.745-3.616-1.67-.183-.17-.353-.35-.512-.54v7.412a7.11 7.11 0 0 1-7.11 7.11 7.11 7.11 0 0 1-7.11-7.11 7.11 7.11 0 0 1 7.11-7.11c.2 0 .4.01.6.03V11.2a3.333 3.333 0 1 0 3.13 3.333V0l.01.02z"></path></svg>
-          </a>
-        </div>
       </footer>
-
-      {/* ✨ FULLSCREEN IMAGE PREVIEW */}
-      {previewImage && (
-        <div 
-          className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 md:p-12 cursor-zoom-out animate-in fade-in zoom-in duration-300"
-          onClick={() => setPreviewImage(null)}
-        >
-          <button className="absolute top-8 right-8 text-white/50 hover:text-white transition-colors">
-            <X className="w-8 h-8" />
-          </button>
-          <div className="relative max-w-5xl w-full h-full flex items-center justify-center p-4">
-            <img 
-              src={previewImage} 
-              className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl border-2 border-white/10" 
-              alt="Fullscreen Preview"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
