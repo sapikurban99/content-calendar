@@ -144,3 +144,66 @@ body {
     --foreground: #ededed;
   }
 }
+
+/* --- Global Loading Bar Animation --- */
+@keyframes loading-progress {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(0%); }
+  100% { transform: translateX(100%); }
+}
+
+.loading-bar {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  cursor: wait;
+}
+
+@media (prefers-color-scheme: dark) {
+  .loading-bar {
+    background-color: rgba(0, 0, 0, 0.7);
+  }
+  .loading-bar::after {
+    border-color: #fff;
+    border-top-color: #d946ef;
+  }
+  .loading-bar::before {
+    color: #fff;
+  }
+}
+
+.loading-bar::after {
+  content: "";
+  width: 48px;
+  height: 48px;
+  border: 4px solid #000;
+  border-top-color: #d946ef;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);
+}
+
+.loading-bar::before {
+  content: "PROCESSING...";
+  position: absolute;
+  top: calc(50% + 40px);
+  font-family: inherit;
+  font-weight: 900;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: #000;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* --- Drag and Drop classes --- */
+.dragging-over {
+  background-color: #fce7f3 !important; /* fuchsia-100 */
+  border-color: #d946ef !important; /* fuchsia-500 */
+  border-style: dashed !important;
+}

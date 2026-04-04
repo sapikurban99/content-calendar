@@ -65,6 +65,10 @@ export default function DashboardPage() {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [newAccHandle, setNewAccHandle] = useState("");
   const [newAccName, setNewAccName] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [draggedPlan, setDraggedPlan] = useState<ContentPlan | null>(null);
+  const [linkRequiredModal, setLinkRequiredModal] = useState<{ isOpen: boolean; planId: string; status: string }>({ isOpen: false, planId: '', status: '' });
+  const [requiredLink, setRequiredLink] = useState("");
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -139,6 +143,7 @@ export default function DashboardPage() {
   const handleSyncPostStats = async () => {
     if (!selectedPlan || !selectedPlan.link) return;
     setIsSyncingPost(true);
+    setIsProcessing(true);
     try {
       await syncSinglePostAnalytics(selectedPlan.id, selectedPlan.link);
     } catch (error) {
@@ -146,6 +151,7 @@ export default function DashboardPage() {
       alert("Failed to sync post stats... 😭");
     } finally {
       setIsSyncingPost(false);
+      setIsProcessing(false);
     }
   };
 
@@ -156,6 +162,7 @@ export default function DashboardPage() {
       return;
     }
 
+    setIsProcessing(true);
     try {
       await addContentPlan({
         accountId: selectedAccount,
@@ -177,24 +184,29 @@ export default function DashboardPage() {
     } catch (error: any) {
       console.error("Save error:", error);
       alert(`❌ Gagal menyimpan: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleSyncProfile = async () => {
     if (!selectedAccount) return;
     setIsSyncing(true);
+    setIsProcessing(true);
     try {
       await syncTikTokAnalytics(selectedAccount);
     } catch (error: any) {
       alert("❌ Sync Error: " + error.message);
     } finally {
       setIsSyncing(false);
+      setIsProcessing(false);
     }
   };
 
   const handleUpdatePlan = async () => {
     if (!selectedPlan) return;
     setIsSyncing(true); // Reuse isSyncing as a general busy state or could use its own
+    setIsProcessing(true);
     try {
       await updateContentPlan(selectedPlan.id, {
         title: selectedPlan.title,
@@ -210,23 +222,69 @@ export default function DashboardPage() {
       alert("❌ Failed to update plan: " + error.message);
     } finally {
       setIsSyncing(false);
+      setIsProcessing(false);
     }
   };
 
   const handleDelete = async (e: React.MouseEvent, planId: string) => {
     e.stopPropagation();
     if (!confirm("Hapus rencana ini?")) return;
-    await deleteContentPlan(planId);
-    if (selectedPlan?.id === planId) setSelectedPlan(null);
+    setIsProcessing(true);
+    try {
+      await deleteContentPlan(planId);
+      if (selectedPlan?.id === planId) setSelectedPlan(null);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleStatusChange = async (e: React.MouseEvent, planId: string, currentStatus: string) => {
     e.stopPropagation();
     const nextStatus = currentStatus === "Ideation" ? "Filming" : currentStatus === "Filming" ? "Editing" : "Posted";
-    await updatePlanStatus(planId, nextStatus);
+    
+    // Check if link is present before posting
+    if (nextStatus === "Posted") {
+      const plan = plans.find(p => p.id === planId);
+      if (!plan?.link) {
+        setLinkRequiredModal({ isOpen: true, planId, status: nextStatus });
+        return;
+      }
+    }
 
-    if (selectedPlan?.id === planId) {
-      setSelectedPlan({ ...selectedPlan, status: nextStatus });
+    setIsProcessing(true);
+    try {
+      await updatePlanStatus(planId, nextStatus);
+
+      if (selectedPlan?.id === planId) {
+        setSelectedPlan({ ...selectedPlan, status: nextStatus });
+      }
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const submitRequiredLink = async () => {
+    if (!requiredLink.trim()) {
+      alert("Link wajib diisi untuk status Posted!");
+      return;
+    }
+    
+    setIsProcessing(true);
+    try {
+      await updateContentPlan(linkRequiredModal.planId, { link: requiredLink });
+      await updatePlanStatus(linkRequiredModal.planId, linkRequiredModal.status);
+      
+      if (selectedPlan?.id === linkRequiredModal.planId) {
+        setSelectedPlan({ ...selectedPlan, status: linkRequiredModal.status, link: requiredLink });
+      }
+      
+      setLinkRequiredModal({ isOpen: false, planId: '', status: '' });
+      setRequiredLink("");
+      alert("✅ Status diupdate ke Posted!");
+    } catch (error) {
+      alert("❌ Gagal update status.");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -234,6 +292,7 @@ export default function DashboardPage() {
     e.preventDefault();
     if (!newAccHandle || !newAccName) return;
 
+    setIsProcessing(true);
     try {
       const handle = newAccHandle.replace("@", "").trim();
       await addAccount({
@@ -249,6 +308,8 @@ export default function DashboardPage() {
       alert(`✅ Akun @${handle} berhasil ditambahkan!`);
     } catch (error: any) {
       alert("❌ Gagal menambah akun: " + error.message);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -261,6 +322,42 @@ export default function DashboardPage() {
 
   const prevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
   const nextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+
+  const handleDayClick = (dayNum: number, currentMonth: number, currentYear: number) => {
+    const formattedDate = new Date(Date.UTC(currentYear, currentMonth, dayNum, 12, 0, 0)).toISOString().split("T")[0];
+    setNewDate(formattedDate);
+    setIsAddPlanOpen(true);
+  };
+
+  const handleDragOver = (e: React.DragEvent, dayNum: number) => {
+    e.preventDefault();
+    e.currentTarget.classList.add('dragging-over');
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.currentTarget.classList.remove('dragging-over');
+  };
+
+  const handleDrop = async (e: React.DragEvent, dayNum: number) => {
+    e.preventDefault();
+    e.currentTarget.classList.remove('dragging-over');
+    if (!draggedPlan) return;
+    
+    // Create new UTC date to prevent timezone shifts when saving
+    const newDate = new Date(Date.UTC(currentDate.getFullYear(), currentDate.getMonth(), dayNum, 12, 0, 0));
+    const dateStr = newDate.toISOString();
+    
+    setIsProcessing(true);
+    try {
+      await updateContentPlan(draggedPlan.id, { publishDate: dateStr });
+      if (selectedPlan?.id === draggedPlan.id) setSelectedPlan({...selectedPlan, publishDate: dateStr});
+    } catch (err) {
+      alert("❌ Gagal memindahkan jadwal.");
+    } finally {
+      setIsProcessing(false);
+      setDraggedPlan(null);
+    }
+  };
 
   const getStatusStyle = (status: string) => {
     switch (status) {
@@ -278,6 +375,26 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#fafafa] bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:20px_20px] text-gray-900 font-sans selection:bg-fuchsia-300 selection:text-black pb-12 relative">
+
+      {/* ✨ GLOBAL PROCESSING INDICATOR */}
+      {isProcessing && <div className="loading-bar"></div>}
+
+      {/* ✨ LINK REQUIRED MODAL */}
+      {linkRequiredModal.isOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/40 backdrop-blur-md transition-all" onClick={() => setLinkRequiredModal({ isOpen: false, planId: '', status: '' })}>
+          <div className="bg-white rounded-3xl border-2 border-black shadow-[10px_10px_0px_0px_rgba(0,0,0,1)] w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-black italic tracking-tight flex items-center gap-2"><LinkIcon className="w-5 h-5 text-lime-500" /> Link Required</h2>
+                <button onClick={() => setLinkRequiredModal({ isOpen: false, planId: '', status: '' })} className="bg-gray-100 p-2 rounded-full hover:bg-black hover:text-white transition-colors"><X className="w-4 h-4" /></button>
+              </div>
+              <p className="text-xs font-mono mb-4 text-gray-700">Kamu harus memasukkan referensi link (misal: TikTok) sebelum menandai konten ini sebagai <span className="font-bold text-lime-600 bg-lime-100 px-1 rounded">Posted</span>.</p>
+              <input type="url" placeholder="https://tiktok.com/..." className="w-full px-4 py-3 mb-4 bg-gray-50 border-2 border-black rounded-xl focus:bg-white outline-none font-mono text-sm transition-all" value={requiredLink} onChange={(e) => setRequiredLink(e.target.value)} />
+              <button onClick={submitRequiredLink} className="w-full bg-lime-400 text-black px-4 py-4 rounded-2xl font-black text-sm tracking-widest hover:bg-lime-500 transition-all border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-1 active:shadow-none">SIMPAN & POSTED ➔</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ✨ DETAIL & EDIT MODAL */}
       {selectedPlan && (
@@ -700,14 +817,27 @@ export default function DashboardPage() {
                     return d.getDate() === dayNum && d.getMonth() === currentDate.getMonth() && d.getFullYear() === currentDate.getFullYear();
                   });
                   return (
-                    <div key={dayNum} className="min-h-[140px] p-2 border-b-2 border-r-2 border-gray-100 hover:bg-gray-50 transition-colors group relative text-black">
+                    <div 
+                      key={dayNum} 
+                      className="min-h-[140px] p-2 border-b-2 border-r-2 border-gray-100 hover:bg-gray-50 transition-colors group relative text-black cursor-pointer"
+                      onClick={() => handleDayClick(dayNum, currentDate.getMonth(), currentDate.getFullYear())}
+                      onDragOver={(e) => handleDragOver(e, dayNum)}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => handleDrop(e, dayNum)}
+                    >
                       <div className="font-mono text-xs font-bold mb-2 flex justify-between items-center text-black"><span>{dayNum}</span></div>
                       <div className="space-y-1.5">
                         {dayPlans.map(plan => {
                           const dateObj = parseSafeDate(plan.publishDate);
                           const isValidDate = !isNaN(dateObj.getTime());
                           return (
-                            <div key={plan.id} onClick={() => handleOpenModal(plan)} className={`p-1.5 rounded-xl border-2 text-[10px] leading-tight font-bold cursor-pointer transition-all hover:scale-[1.03] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] ${getStatusStyle(plan.status)}`}>
+                            <div 
+                              draggable
+                              onDragStart={(e) => { e.stopPropagation(); setDraggedPlan(plan); }}
+                              key={plan.id} 
+                              onClick={(e) => { e.stopPropagation(); handleOpenModal(plan); }} 
+                              className={`p-1.5 rounded-xl border-2 text-[10px] leading-tight font-bold cursor-grab active:cursor-grabbing transition-all hover:scale-[1.03] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] ${getStatusStyle(plan.status)}`}
+                            >
                               <div className="flex items-start gap-2">
                                 {plan.coverUrl && <img src={plan.coverUrl} className="w-6 h-6 rounded object-cover" />}
                                 <div className="flex-1 truncate">{plan.title}</div>
