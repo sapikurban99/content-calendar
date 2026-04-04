@@ -21,8 +21,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "TikTok Content Planner | Dashboard",
-  description: "A premium data-driven content planner for TikTok creators by PT Multi Areal",
+  title: "Content Planner | Dashboard",
+  description: "A premium data-driven content planner for Creators",
   formatDetection: {
     telephone: false,
   },

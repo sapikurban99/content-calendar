@@ -8,11 +8,15 @@ export default function LandingPage() {
       {/* 🌟 NAVBAR */}
       <nav className="fixed top-0 w-full backdrop-blur-md bg-white/70 border-b-2 border-black z-50 px-6 py-4 flex justify-between items-center transition-all">
         <div className="flex items-center gap-2">
-          <svg className="w-8 h-8" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12.525.02c1.31-.036 2.612-.012 3.914-.012.036 1.662.63 3.193 1.82 4.316.89.843 1.986 1.406 3.167 1.63v3.743c-1.37-.156-2.61-.745-3.616-1.67-.183-.17-.353-.35-.512-.54v7.412a7.11 7.11 0 0 1-7.11 7.11 7.11 7.11 0 0 1-7.11-7.11 7.11 7.11 0 0 1 7.11-7.11c.2 0 .4.01.6.03V11.2a3.333 3.333 0 1 0 3.13 3.333V0l.01.02z"></path>
+          <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="18" cy="5" r="3" className="text-fuchsia-500"></circle>
+            <circle cx="6" cy="12" r="3" className="text-black"></circle>
+            <circle cx="18" cy="19" r="3" className="text-cyan-500"></circle>
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
           </svg>
           <span className="text-xl font-black italic tracking-tighter hover:scale-105 transition-transform cursor-pointer">
-            TikTok<span className="text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-500 to-cyan-400">Planner</span>
+            Content<span className="text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-500 to-cyan-400">Planner</span>
           </span>
         </div>
         <div className="flex items-center gap-4">
@@ -36,14 +40,14 @@ export default function LandingPage() {
         </div>
 
         <h1 className="text-5xl md:text-7xl font-black tracking-tighter leading-[1.1] mb-6 max-w-4xl cursor-default">
-          Rencanakan Konten TikTok Tanpa <span className="relative inline-block">
+          Rencanakan Konten Sosmed Tanpa <span className="relative inline-block">
             <span className="relative z-10 text-white italic">Pusing</span>
             <span className="absolute inset-0 bg-black -rotate-2 scale-110 -z-0"></span>
           </span>
         </h1>
 
         <p className="text-lg md:text-xl text-black font-medium max-w-2xl mb-10 leading-relaxed font-mono">
-          Kalender editorial premium dikhususkan untuk TikTok Creator. Lacak metrik, atur status produksi, dan dominasi FYP sekarang juga!
+          Kalender editorial premium dikhususkan untuk Creator. Kelola TikTok, Instagram, dan LinkedIn dalam satu dashboard. Lacak metrik dan atur status produksi!
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
@@ -77,15 +81,15 @@ export default function LandingPage() {
                 <TrendingUp className="w-7 h-7" />
               </div>
               <h3 className="text-2xl font-black mb-3">Live Analytics</h3>
-              <p className="text-white/70 font-mono text-sm leading-relaxed">Tarik data Views, Likes, dan Engagement langsung dari TikTok ke dashboard pribadimu.</p>
+              <p className="text-white/70 font-mono text-sm leading-relaxed">Tarik data Engagement langsung dari TikTok, IG, atau LinkedIn ke dashboard pribadimu.</p>
             </div>
 
             <div className="bg-[#111] border-2 border-white/20 p-8 rounded-3xl hover:border-lime-400 hover:-translate-y-2 transition-all group">
               <div className="w-14 h-14 bg-lime-400/20 text-lime-400 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                 <Users className="w-7 h-7" />
               </div>
-              <h3 className="text-2xl font-black mb-3">Multi-Account</h3>
-              <p className="text-white/70 font-mono text-sm leading-relaxed">Kelola banyak akun TikTok klien atau pribadi tanpa perlu login-logout aplikasi aslinya.</p>
+              <h3 className="text-2xl font-black mb-3">Multi-Platform & Account</h3>
+              <p className="text-white/70 font-mono text-sm leading-relaxed">Kelola banyak akun TikTok, Instagram, dan LinkedIn klien atau pribadi dengan mudah.</p>
             </div>
           </div>
         </div>
@@ -112,15 +116,19 @@ export default function LandingPage() {
             <div className="max-w-sm">
               <div className="flex items-center gap-3 mb-6 group cursor-default">
                 <div className="w-10 h-10 bg-black text-white rounded-full flex items-center justify-center shadow-[3px_3px_0px_0px_rgba(236,72,153,1)]">
-                  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12.525.02c1.31-.036 2.612-.012 3.914-.012.036 1.662.63 3.193 1.82 4.316.89.843 1.986 1.406 3.167 1.63v3.743c-1.37-.156-2.61-.745-3.616-1.67-.183-.17-.353-.35-.512-.54v7.412a7.11 7.11 0 0 1-7.11 7.11 7.11 7.11 0 0 1-7.11-7.11 7.11 7.11 0 0 1 7.11-7.11c.2 0 .4.01.6.03V11.2a3.333 3.333 0 1 0 3.13 3.333V0l.01.02z"></path>
+                  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="18" cy="5" r="3" className="text-fuchsia-400"></circle>
+                    <circle cx="6" cy="12" r="3" className="text-white"></circle>
+                    <circle cx="18" cy="19" r="3" className="text-cyan-400"></circle>
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
                   </svg>
                 </div>
-                <span className="text-xl font-black italic tracking-tighter">TikTok<span className="text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-500 to-cyan-400">Planner</span></span>
+                <span className="text-xl font-black italic tracking-tighter">Content<span className="text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-500 to-cyan-400">Planner</span></span>
               </div>
               <p className="text-black/60 text-sm leading-relaxed font-mono font-medium">
                 Platform cerdas untuk mengelola jadwal rilis. 
-                Optimalkan strategi konten TikTokmu untuk dominasi FYP.
+                Optimalkan strategi konten Sosmedmu (TikTok, IG, LinkedIn).
               </p>
             </div>
 
