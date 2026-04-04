@@ -168,9 +168,21 @@ export default function DashboardPage() {
     }
   };
 
+  const handleSyncProfile = async () => {
+    if (!selectedAccount) return;
+    setIsSyncing(true);
+    try {
+      await syncTikTokAnalytics(selectedAccount);
+    } catch (error: any) {
+      alert("❌ Sync Error: " + error.message);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handleUpdatePlan = async () => {
     if (!selectedPlan) return;
-
+    setIsSyncing(true); // Reuse isSyncing as a general busy state or could use its own
     try {
       await updateContentPlan(selectedPlan.id, {
         title: selectedPlan.title,
@@ -184,6 +196,8 @@ export default function DashboardPage() {
       alert("✅ Plan Updated!");
     } catch (error: any) {
       alert("❌ Failed to update plan: " + error.message);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -292,6 +306,15 @@ export default function DashboardPage() {
                       className="w-full px-4 py-3 border-2 border-black rounded-xl font-bold outline-none focus:ring-2 ring-fuchsia-500/20"
                       value={selectedPlan.title}
                       onChange={(e) => setSelectedPlan({...selectedPlan, title: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black font-mono text-gray-400 uppercase mb-1 block">📅 Tanggal Publish</label>
+                    <input 
+                      type="date" 
+                      className="w-full px-4 py-2 bg-gray-50 border-2 border-black rounded-xl font-mono text-xs outline-none focus:ring-2 ring-fuchsia-500/20"
+                      value={selectedPlan.publishDate ? parseSafeDate(selectedPlan.publishDate).toISOString().split('T')[0] : ''}
+                      onChange={(e) => setSelectedPlan({...selectedPlan, publishDate: new Date(e.target.value).toISOString()})}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -566,7 +589,13 @@ export default function DashboardPage() {
                     <Users className="w-8 h-8 text-gray-300" />
                   </div>
                 )}
-                <div className="absolute bottom-0 right-0 w-5 h-5 bg-green-500 border-2 border-black rounded-full z-20 animate-pulse"></div>
+                <button 
+                  onClick={handleSyncProfile}
+                  disabled={isSyncing}
+                  className="absolute bottom-0 right-0 w-8 h-8 bg-black text-white hover:bg-fuchsia-600 border-2 border-white rounded-full z-20 flex items-center justify-center transition-all active:scale-90 disabled:bg-gray-400"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                </button>
               </div>
               
               <h3 className="text-xl font-black italic tracking-tight">{accounts.find(a => a.id === selectedAccount)?.name || "TikTok Account"}</h3>
