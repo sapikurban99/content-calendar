@@ -122,6 +122,20 @@ export default function DashboardPage() {
   const [syncProgress, setSyncProgress] = useState(0);
 
   useEffect(() => {
+    // ✨ LITE REDIRECTION: Detect legacy iOS (Safari < 15)
+    if (typeof window !== "undefined") {
+      const ua = window.navigator.userAgent;
+      const iOSMatch = ua.match(/iPad|iPhone|iPod/) && ua.match(/OS\s([0-9_]+)/);
+      if (iOSMatch) {
+         const versionStr = iOSMatch[1].replace(/_/g, '.');
+         const version = parseInt(versionStr.split('.')[0]);
+         if (version < 15) {
+           router.push("/dashboard/lite");
+           return;
+         }
+      }
+    }
+
     if (!authLoading && !user) {
       router.push("/login");
     } else if (user) {

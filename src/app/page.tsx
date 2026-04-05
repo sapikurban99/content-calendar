@@ -1,7 +1,27 @@
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight, Star, Sparkles, TrendingUp, Calendar, Users } from "lucide-react";
 
 export default function LandingPage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    // ✨ LITE REDIRECTION: Detect legacy iOS (Safari < 15)
+    if (typeof window !== "undefined") {
+      const ua = window.navigator.userAgent;
+      const iOSMatch = ua.match(/iPad|iPhone|iPod/) && ua.match(/OS\s([0-9_]+)/);
+      if (iOSMatch) {
+         const versionStr = iOSMatch[1].replace(/_/g, '.');
+         const version = parseInt(versionStr.split('.')[0]);
+         if (version < 15) {
+           router.push("/dashboard/lite");
+         }
+      }
+    }
+  }, [router]);
   return (
     <div className="min-h-screen bg-[#fafafa] bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:20px_20px] text-gray-900 font-sans selection:bg-fuchsia-300 selection:text-black overflow-x-hidden">
 
