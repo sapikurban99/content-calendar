@@ -125,11 +125,23 @@ export default function DashboardPage() {
     // ✨ LITE REDIRECTION: Detect legacy iOS (Safari < 15)
     if (typeof window !== "undefined") {
       const ua = window.navigator.userAgent;
+      
+      // Standard iOS Detection
       const iOSMatch = ua.match(/iPad|iPhone|iPod/) && ua.match(/OS\s([0-9_]+)/);
-      if (iOSMatch) {
-         const versionStr = iOSMatch[1].replace(/_/g, '.');
-         const version = parseInt(versionStr.split('.')[0]);
-         if (version < 15) {
+      
+      // iPadOS "Desktop Mode" Detection (Modern iPads identify as Macintosh)
+      const isIPadOS = (ua.includes("Macintosh") && navigator.maxTouchPoints > 1) || ua.includes("iPad");
+
+      if (iOSMatch || isIPadOS) {
+         let version = 0;
+         if (iOSMatch) {
+            version = parseInt(iOSMatch[1].split('_')[0]);
+         } else {
+            // Fallback for iPadOS Macintosh mode
+            version = 15; // Set to 15 to trigger lite version for iPadOS touch devices
+         }
+         
+         if (version <= 15) {
            router.push("/dashboard/lite");
            return;
          }
