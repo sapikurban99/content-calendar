@@ -22,6 +22,8 @@ import {
   deleteAccount
 } from "@/lib/services";
 import type { Account, ContentPlan, SocialProfile, PostAnalytics, Platform } from "@/types/index";
+import { APP_VERSION, COMMIT_HASH } from "./version";
+
 // ✨ Sytem Utility: Safe Date Parser for old iOS (Safari < 15)
 const parseSafeDate = (dateStr: string | undefined | null) => {
   if (!dateStr) return new Date();
@@ -86,9 +88,11 @@ export default function DashboardPage() {
   // Analytics Stats
   const [profileStats, setProfileStats] = useState<SocialProfile | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const [syncAllProgress, setSyncAllProgress] = useState({ current: 0, total: 0, label: "" });
 
   // View, Calendar, & Modal State
-  const [activeView, setActiveView] = useState<"list" | "calendar">("calendar");
+  const [activeView, setActiveView] = useState<"list" | "calendar" | "kanban">("calendar");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedPlan, setSelectedPlan] = useState<ContentPlan | null>(null);
   const [postStats, setPostStats] = useState<PostAnalytics | null>(null); 
@@ -304,6 +308,47 @@ export default function DashboardPage() {
     }
   };
 
+  const handleSyncAll = async () => {
+    if (!selectedAccount) return;
+    const plansWithLinks = plans.filter(p => p.accountId === selectedAccount && p.link);
+    
+    setIsSyncingAll(true);
+    setSyncAllProgress({ current: 0, total: plansWithLinks.length, label: "Initializing Batch Sync..." });
+
+    try {
+      // 1. Sync Profile First
+      setSyncAllProgress(prev => ({ ...prev, label: "Updating Account Profile..." }));
+      await syncSocialAnalytics(activeAccount?.handle || selectedAccount, activePlatform, activeAccount?.linkedinType);
+      
+      if (plansWithLinks.length === 0) {
+        setSyncAllProgress(prev => ({ ...prev, label: "Profile Updated (No connected posts found)" }));
+        setTimeout(() => setIsSyncingAll(false), 2000);
+        return;
+      }
+
+      // 2. Sync Posts Sequentially
+      for (let i = 0; i < plansWithLinks.length; i++) {
+        const plan = plansWithLinks[i];
+        setSyncAllProgress({ current: i + 1, total: plansWithLinks.length, label: `Syncing: ${plan.title}` });
+        
+        try {
+          await syncSinglePostAnalytics(plan.id, plan.link!, activeAccount?.handle || "");
+          // Wait briefly between requests to be safe
+          await new Promise(resolve => setTimeout(resolve, 800));
+        } catch (err) {
+          console.warn(`Failed to sync post ${plan.id}`, err);
+        }
+      }
+
+      setSyncAllProgress(prev => ({ ...prev, current: plansWithLinks.length, label: "✨ All data synchronized successfully!" }));
+      setTimeout(() => setIsSyncingAll(false), 3000);
+    } catch (error: any) {
+      console.error("Sync All error:", error);
+      alert("❌ Sync All Error: " + error.message);
+      setIsSyncingAll(false);
+    }
+  };
+
   const handleUpdatePlan = async () => {
     if (!selectedPlan) return;
     setIsSyncing(true); // Reuse isSyncing as a general busy state or could use its own
@@ -339,9 +384,9 @@ export default function DashboardPage() {
     }
   };
 
-  const handleStatusChange = async (e: React.MouseEvent, planId: string, currentStatus: string) => {
-    e.stopPropagation();
-    const nextStatus = currentStatus === "Ideation" ? "Filming" : currentStatus === "Filming" ? "Editing" : "Posted";
+  const handleStatusChange = async (e: any, planId: string, currentStatus: string, targetStatus?: string) => {
+    if (e?.stopPropagation) e.stopPropagation();
+    const nextStatus = targetStatus || (currentStatus === "Ideation" ? "Filming" : currentStatus === "Filming" ? "Editing" : "Posted");
     
     // Check if link is present before posting
     if (nextStatus === "Posted") {
@@ -1040,12 +1085,21 @@ export default function DashboardPage() {
               </div>
               
               <h3 className="text-xl font-black italic tracking-tight">{profileStats?.name || activeAccount?.name || "Account Profile"}</h3>
-              <p className="text-xs font-bold font-mono text-black flex items-center gap-1.5 mt-1.5 uppercase">
+
+              <button 
+                onClick={handleSyncAll}
+                disabled={isSyncingAll}
+                className="mt-3 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-fuchsia-600 to-cyan-500 text-white rounded-xl font-black text-[10px] tracking-widest shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+              >
+                <Sparkles className="w-3.5 h-3.5 group-hover:rotate-12 transition-transform" /> 
+                {isSyncingAll ? "SYNCING..." : "SYNC ALL POSTS"}
+              </button>
+              <p className="text-xs font-bold font-mono text-black flex items-center gap-1.5 mt-1.5">
                 <BrandIcon 
                   platform={activePlatform} 
                   className={`w-3.5 h-3.5 ${activePlatform === 'instagram' ? 'text-fuchsia-500' : activePlatform === 'linkedin' ? 'text-blue-600' : 'text-black'}`} 
                 />
-                @{activeAccount?.handle?.toLowerCase() || "Loading..."}
+                @{activeAccount?.handle || "Loading..."}
               </p>
             </div>
 
@@ -1145,6 +1199,7 @@ export default function DashboardPage() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white border-2 border-black rounded-2xl p-3 md:p-2 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
             <div className="flex gap-2">
               <button onClick={() => setActiveView('calendar')} className={`flex-1 md:flex-none justify-center px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all ${activeView === 'calendar' ? 'bg-black text-white' : 'hover:bg-gray-100 text-black'}`}><CalendarIcon className="w-4 h-4" /> Calendar</button>
+              <button onClick={() => setActiveView('kanban')} className={`flex-1 md:flex-none justify-center px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all ${activeView === 'kanban' ? 'bg-black text-white' : 'hover:bg-gray-100 text-black'}`}><LayoutList className="w-4 h-4" /> Kanban</button>
               <button onClick={() => setActiveView('list')} className={`flex-1 md:flex-none justify-center px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all ${activeView === 'list' ? 'bg-black text-white' : 'hover:bg-gray-100 text-black'}`}><LayoutList className="w-4 h-4" /> List View</button>
             </div>
             
@@ -1228,6 +1283,83 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {activeView === 'kanban' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 min-h-[600px]">
+              {["Ideation", "Filming", "Editing", "Posted"].map(status => {
+                const columnPlans = filteredPlans.filter(p => p.status === status);
+                return (
+                  <div 
+                    key={status}
+                    className="flex flex-col gap-4"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.add('bg-gray-100/50');
+                    }}
+                    onDragLeave={(e) => {
+                      e.currentTarget.classList.remove('bg-gray-100/50');
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.remove('bg-gray-100/50');
+                      if (draggedPlan && draggedPlan.status !== status) {
+                        handleStatusChange(e, draggedPlan.id, draggedPlan.status, status);
+                      }
+                    }}
+                  >
+                    <div className="flex items-center justify-between px-2">
+                       <h3 className="text-xs font-black font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+                         <span className={`w-2 h-2 rounded-full ${
+                           status === 'Ideation' ? 'bg-gray-400' : 
+                           status === 'Filming' ? 'bg-fuchsia-500' : 
+                           status === 'Editing' ? 'bg-blue-500' : 'bg-lime-500'
+                         }`}></span>
+                         {status}
+                         <span className="text-[10px] font-bold opacity-30">({columnPlans.length})</span>
+                       </h3>
+                    </div>
+
+                    <div className="flex-1 space-y-4 min-h-[200px] transition-colors rounded-3xl p-1">
+                      {columnPlans.length > 0 ? (
+                        columnPlans.map(plan => (
+                          <div 
+                            key={plan.id}
+                            draggable
+                            onDragStart={() => setDraggedPlan(plan)}
+                            onClick={() => handleOpenModal(plan)}
+                            className={`bg-white border-2 border-black rounded-2xl p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all cursor-grab active:cursor-grabbing group/card ${getStatusStyle(plan.status)}`}
+                          >
+                            <div className="flex flex-col gap-3">
+                              {plan.coverUrl && (
+                                <div className="w-full aspect-video rounded-xl border border-black/10 overflow-hidden relative">
+                                  <img 
+                                    src={proxyImage(plan.coverUrl)} 
+                                    className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-500" 
+                                    alt="Preview" 
+                                  />
+                                </div>
+                              )}
+                              <div>
+                                <h4 className="text-xs font-black italic text-black leading-tight mb-1">{plan.title}</h4>
+                                <div className="flex items-center gap-2 text-[9px] font-mono font-bold text-black/50 uppercase">
+                                  <CalendarIcon className="w-3 h-3" /> {parseSafeDate(plan.publishDate).toLocaleDateString('en-GB')}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-32 border-2 border-dashed border-black/5 rounded-3xl opacity-30 pointer-events-none">
+                           <LayoutList className="w-6 h-6 mb-2" />
+                           <span className="text-[10px] font-mono font-bold">EMPTY</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {activeView === 'list' && (
             <div className="space-y-4">
               {filteredPlans.length > 0 ? (
@@ -1276,14 +1408,54 @@ export default function DashboardPage() {
             <span className="text-[10px] font-black font-mono text-black uppercase tracking-tighter">Production Build</span>
           </div>
           <div className="w-px h-3 bg-black/10"></div>
-          <div className="flex items-center gap-1.5">
-            <svg className="w-3 h-3 text-black" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5L20 8"></path><path d="M9 22v-4a4.8 4.8 0 0 1 1-3.5L4 8"></path><path d="m14 4-2 2 2 2"></path><path d="M12 6h10"></path><path d="m10 4 2 2-2 2"></path><path d="M12 6H2"></path></svg>
-            <span className="text-[10px] font-bold font-mono text-fuchsia-600">c27fa2f</span>
-          </div>
-          <div className="w-px h-3 bg-black/10"></div>
-          <span className="text-[10px] font-medium font-mono text-gray-400">v1.2.4-stable</span>
+          <span className="text-[10px] font-black font-mono text-gray-400 tracking-wider">v{APP_VERSION}-stable</span>
         </div>
       </footer>
+
+      {/* ✨ BATCH SYNC PROGRESS TOAST */}
+      {isSyncingAll && (
+        <div className="fixed bottom-6 right-6 z-[80] animate-in slide-in-from-bottom-5 fade-in duration-500">
+          <div className="bg-white border-2 border-black p-5 rounded-3xl shadow-[10px_10px_0px_0px_rgba(0,0,0,1)] min-w-[280px] max-w-sm relative overflow-hidden group">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gray-100">
+              <div 
+                className="h-full bg-gradient-to-r from-fuchsia-500 to-cyan-400 transition-all duration-1000 ease-out"
+                style={{ width: `${(syncAllProgress.current / (syncAllProgress.total || 1)) * 100}%` }}
+              ></div>
+            </div>
+            
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-2xl bg-black flex items-center justify-center shrink-0 border-2 border-black rotate-3 group-hover:rotate-0 transition-transform">
+                {syncAllProgress.current === syncAllProgress.total && syncAllProgress.total > 0 ? (
+                  <Sparkles className="w-5 h-5 text-fuchsia-400 animate-pulse" />
+                ) : (
+                  <RefreshCw className="w-5 h-5 text-white animate-spin-slow" />
+                )}
+              </div>
+              
+              <div className="flex-1 min-w-0">
+                <div className="flex justify-between items-end mb-1">
+                  <span className="text-[10px] font-black font-mono text-black uppercase tracking-widest">
+                    Post Sync {syncAllProgress.total > 0 ? `(${syncAllProgress.current}/${syncAllProgress.total})` : ''}
+                  </span>
+                  <span className="text-[10px] font-black font-mono text-fuchsia-600">
+                    {Math.round((syncAllProgress.current / (syncAllProgress.total || 1)) * 100)}%
+                  </span>
+                </div>
+                <h4 className="text-xs font-bold text-black truncate italic leading-tight">
+                  {syncAllProgress.label}
+                </h4>
+              </div>
+              
+              <button 
+                onClick={() => setIsSyncingAll(false)}
+                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ✨ FULLSCREEN IMAGE PREVIEW */}
       {previewImage && (
